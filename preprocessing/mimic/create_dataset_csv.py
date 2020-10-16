@@ -18,6 +18,18 @@ combined = pd.concat((split_df, metadata_df.iloc[:, 3:]), axis=1)
 # Use PA or AP view position only
 combined = combined.loc[combined['ViewPosition'].isin(['PA', 'AP'])]
 
+# No reports
+missing_studies = [
+    58235663,
+    50798377,
+    54168089,
+    53071062,
+    56724958,
+    54231141,
+    53607029,
+    52035334,
+]
+
 
 for mode in ['train', 'validate', 'test']:
 
@@ -34,6 +46,10 @@ for mode in ['train', 'validate', 'test']:
         # Sanity check image exists
         if not os.path.exists(os.path.join(mimic_root, img_path)):
             print(f'IMAGE MISSING: {img_path}')
+            continue
+
+        if study_id in missing_studies:
+            print(f'{idx}: study [{study_id}] is missing...')
             continue
 
         label = reports_df.loc[reports_df['Study'] == f's{study_id}']
