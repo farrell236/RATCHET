@@ -12,7 +12,7 @@ RATCHET is a Medical Transformer for Chest X-ray Diagnosis and Reporting. Based 
 
 ### Run the code
 
-Download the [pretrained weights](tbd) and put in `./checkpoints` folder. Then run:
+Download the [pretrained weights](http://www.doc.ic.ac.uk/~bh1511/ratchet_model_weights_202009251103.zip) and put in `./checkpoints` folder. Then run:
 
 ```
 streamlit run web_demo.py
