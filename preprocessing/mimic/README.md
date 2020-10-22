@@ -11,7 +11,7 @@ Main Project Website: https://mimic-cxr.mit.edu
 
 ## Files
 
-Code in this folder pre-processes the mimic-cxr dataset for text generation and Streamlit demo tasks featured in this repository. There should be <u>6</u> additional supporting files in this folder.
+Code in this folder pre-processes the mimic-cxr dataset for text generation and Streamlit demo tasks featured in this repository. There should be <ins>6</ins> additional supporting files in this folder.
 
 
 ##### &gt;&gt; `mimic_cxr_labeled.csv`
@@ -33,3 +33,7 @@ These are created by the script [`create_dataset_csv.py`](https://github.com/far
 ##### &gt;&gt; `mimic-merges.txt` and `mimic-vocab.json`:
 
 These are the vocab dictionary files, created by [`create_bpe_vocab.py`](https://github.com/farrell236/RATCHET/blob/master/preprocessing/mimic/create_bpe_vocab.py). The files are used by [Huggingface Byte-Level BPE Tokenizer](https://github.com/huggingface/tokenizers) in the tokenization process.
+
+
+## Note
+Support files are **not** included in this repository as user credentialing is required for data access. See: [here](https://mimic-cxr.mit.edu/about/access/)
