@@ -162,6 +162,7 @@ if __name__ == '__main__':
     from datasets.mscoco import get_mscoco_dataset
     from model.transformer import Transformer, default_hparams
     from model.utils import create_target_masks
+    from model.lr_scheduler import CustomSchedule
 
     # Set Tensorflow 2.0 logging level
     error_level = {'0': 'DEBUG', '1': 'INFO', '2': 'WARN', '3': 'ERROR'}
