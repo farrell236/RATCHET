@@ -162,7 +162,6 @@ if __name__ == '__main__':
     # ISSUE: https://github.com/tensorflow/tensorflow/issues/31870
     import tensorflow as tf
     from datasets.mimic import get_mimic_dataset
-    from datasets.mscoco import get_mscoco_dataset
     from model.transformer import Transformer, default_hparams
     from model.utils import create_target_masks
 
