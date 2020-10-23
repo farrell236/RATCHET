@@ -96,7 +96,7 @@ def get_mimic_dataset(csv_root,
         dataset = dataset.map(augmentation_fn, num_parallel_calls=n_threads)
     dataset = dataset.map(make_grayscale_fn, num_parallel_calls=n_threads)
     dataset = dataset.batch(batch_size)
-    dataset = dataset.prefetch(buffer_size)
+    dataset = dataset.prefetch(n_threads)
 
     return dataset, tokenizer
 
