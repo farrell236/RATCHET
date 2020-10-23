@@ -22,9 +22,13 @@ def main(args, hparams):
     # Define computational graph in a Strategy wrapper
     with strategy.scope():
 
+        # Define learning rate scheduler
+        learning_rate = args.init_lr if args.init_lr is not None else \
+            CustomSchedule(hparams['d_model'], warmup_steps=len(train_dataset) // 2)
+
         # Create Adam Optimiser
         optimizer = tf.keras.optimizers.Adam(
-            learning_rate=args.init_lr, beta_1=0.9, beta_2=0.98, epsilon=1e-9)
+            learning_rate=learning_rate, beta_1=0.9, beta_2=0.98, epsilon=1e-9)
 
         # Create TF Sparse Categorical Crossentropy Loss Object
         loss_object = tf.keras.losses.SparseCategoricalCrossentropy(
@@ -164,6 +168,7 @@ if __name__ == '__main__':
     from datasets.mimic import get_mimic_dataset
     from model.transformer import Transformer, default_hparams
     from model.utils import create_target_masks
+    from model.lr_scheduler import CustomSchedule
 
     # Set Tensorflow 2.0 logging level
     error_level = {'0': 'DEBUG', '1': 'INFO', '2': 'WARN', '3': 'ERROR'}
