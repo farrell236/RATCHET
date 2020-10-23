@@ -21,7 +21,6 @@ def main(args, hparams):
 
     # Define computational graph in a Strategy wrapper
     with strategy.scope():
-
         # Define learning rate scheduler
         learning_rate = args.init_lr if args.init_lr is not None else \
             CustomSchedule(hparams['d_model'], warmup_steps=len(train_dataset) // 2)
