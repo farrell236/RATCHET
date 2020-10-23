@@ -64,7 +64,7 @@ def get_mscoco_dataset(coco_root,
                        max_length=64,
                        batch_size=16,
                        n_threads=tf.data.experimental.AUTOTUNE,
-                       buffer_size=10000,
+                       buffer_size=None,
                        mode='train'):
     assert mode in ['train', 'val']
 
@@ -102,13 +102,13 @@ def get_mscoco_dataset(coco_root,
     # Create Tensorflow dataset (image, text) pair
     dataset = tf.data.Dataset.from_tensor_slices((all_img_name_vector, texts_tokenized))
     if mode == 'train':
-        dataset = dataset.shuffle(buffer_size)
+        dataset = dataset.shuffle(len(dataset) if buffer_size == None else buffer_size)
     dataset = dataset.map(parse_function, num_parallel_calls=n_threads)
     if mode == 'train':
         dataset = dataset.map(augmentation_fn, num_parallel_calls=n_threads)
     # dataset = dataset.map(lambda x, y: (apply_blur(x), y), num_parallel_calls=n_threads)
     dataset = dataset.batch(batch_size)
-    dataset = dataset.prefetch(buffer_size)
+    dataset = dataset.prefetch(n_threads)
 
     return dataset, tokenizer
 

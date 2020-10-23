@@ -15,8 +15,7 @@ def main(args, hparams):
     # Load dataset
     BATCH_SIZE_PER_REPLICA = args.batch_size
     GLOBAL_BATCH_SIZE = BATCH_SIZE_PER_REPLICA * strategy.num_replicas_in_sync
-    train_dataset, tokenizer = get_mimic_dataset(args.csv_root, args.vocab_root, args.mimic_root,
-                                                 batch_size=GLOBAL_BATCH_SIZE)
+    train_dataset, tokenizer = get_mscoco_dataset(args.data_root, args.vocab_root, batch_size=GLOBAL_BATCH_SIZE)
     train_dist_dataset = strategy.experimental_distribute_dataset(train_dataset)
 
     # Define computational graph in a Strategy wrapper
@@ -129,10 +128,9 @@ def main(args, hparams):
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--csv_root', default='preprocessing/mimic')
-    parser.add_argument('--vocab_root', default='preprocessing/mimic')
-    parser.add_argument('--mimic_root', default='/data/datasets/chest_xray/MIMIC-CXR/mimic-cxr-jpg-2.0.0.physionet.org')
-    parser.add_argument('--model_name', default='train3')
+    parser.add_argument('--vocab_root', default='preprocessing/mscoco')
+    parser.add_argument('--data_root', default='/data/datasets/MS-COCO/2017/')
+    parser.add_argument('--model_name', default='coco_train0')
     parser.add_argument('--model_params', default='model/hparams.json')
     parser.add_argument('--n_epochs', default=20)
     parser.add_argument('--init_lr', default=1e-4)
@@ -161,7 +159,6 @@ if __name__ == '__main__':
     # Import Tensorflow AFTER setting environment variables
     # ISSUE: https://github.com/tensorflow/tensorflow/issues/31870
     import tensorflow as tf
-    from datasets.mimic import get_mimic_dataset
     from datasets.mscoco import get_mscoco_dataset
     from model.transformer import Transformer, default_hparams
     from model.utils import create_target_masks
