@@ -25,9 +25,6 @@ def parse_function(filename, text):
     # Resize image with padding to 244x244
     image = tf.image.resize_with_pad(image, 224, 224, method=tf.image.ResizeMethod.BILINEAR)
 
-    # Convert image to grayscale
-    image = tf.image.rgb_to_grayscale(image)
-
     return image, text
 
 
@@ -46,6 +43,13 @@ def augmentation_fn(image, text):
     return image, text
 
 
+def make_grayscale_fn(image, text):
+    # Convert image to grayscale
+    image = tf.image.rgb_to_grayscale(image)
+
+    return image, text
+
+
 def get_mimic_dataset(csv_root,
                       vocab_root,
                       mimic_root,
@@ -53,10 +57,10 @@ def get_mimic_dataset(csv_root,
                       batch_size=16,
                       n_threads=16,
                       buffer_size=10000,
-                      dataset='train',
+                      mode='train',
                       unsure=1):
 
-    assert dataset in ['train', 'validate', 'test']
+    assert mode in ['train', 'validate', 'test']
     assert unsure in [0, 1]
 
     # Load Byte-Level BPE Tokenizer with mimic vocabulary
@@ -65,8 +69,8 @@ def get_mimic_dataset(csv_root,
         os.path.join(vocab_root, 'mimic-merges.txt'),
     )
 
-    # Read MIMIC_AP_PA_{dataset}.csv file and set unsure values (-1) to 0 or 1
-    csv_file        = os.path.join(csv_root, f'MIMIC_AP_PA_{dataset}.csv')
+    # Read MIMIC_AP_PA_{mode}.csv file and set unsure values (-1) to 0 or 1
+    csv_file        = os.path.join(csv_root, f'MIMIC_AP_PA_{mode}.csv')
     replacements    = {float('nan'): 0, -1.0: unsure}
     reports         = pd.read_csv(csv_file).replace(replacements).values
 
@@ -85,11 +89,12 @@ def get_mimic_dataset(csv_root,
 
     # Create Tensorflow dataset (image, text) pair
     dataset = tf.data.Dataset.from_tensor_slices((image_paths, texts_tokenized))
-    if dataset == 'train':
+    if mode == 'train':
         dataset = dataset.shuffle(buffer_size)
     dataset = dataset.map(parse_function, num_parallel_calls=n_threads)
-    if dataset == 'train':
+    if mode == 'train':
         dataset = dataset.map(augmentation_fn, num_parallel_calls=n_threads)
+    dataset = dataset.map(make_grayscale_fn, num_parallel_calls=n_threads)
     dataset = dataset.batch(batch_size)
     dataset = dataset.prefetch(buffer_size)
 
@@ -102,7 +107,7 @@ if __name__ == '__main__':
     vocab_root = 'preprocessing/mimic/'
     mimic_root = '/data/datasets/chest_xray/MIMIC-CXR/mimic-cxr-jpg-2.0.0.physionet.org/'
 
-    train_dataset = get_mimic_dataset(csv_root, mimic_root, vocab_root)
+    train_dataset, _ = get_mimic_dataset(csv_root, mimic_root, vocab_root)
 
     iterator = train_dataset.as_numpy_iterator()
     batch = iterator.next()

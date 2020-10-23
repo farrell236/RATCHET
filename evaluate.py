@@ -89,7 +89,8 @@ def main(args, hparams):
     transformer = Transformer(hparams['n_layer'], hparams['d_model'],
                               hparams['n_head'], hparams['dff'],
                               target_vocab_size=target_vocab_size,
-                              rate=hparams['dropout_rate'])
+                              rate=hparams['dropout_rate'],
+                              input_shape=(hparams['img_x'], hparams['img_y'], hparams['img_ch']))
 
     # Restore checkpoint
     ckpt = tf.train.Checkpoint(transformer=transformer)

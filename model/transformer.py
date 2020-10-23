@@ -10,6 +10,9 @@ from .utils import positional_encoding
 
 def default_hparams():
     return {
+        'img_x': 224,
+        'img_y': 224,
+        'img_ch': 1,
         'd_model': 512,
         'dff': 2048,
         'n_head': 8,
@@ -176,14 +179,15 @@ class DecoderLayer(tf.keras.layers.Layer):
 
 
 class Encoder(tf.keras.layers.Layer):
-    def __init__(self, embedding_dim, pretrain_weights=None):
+    def __init__(self, embedding_dim, input_shape, pretrain_weights=None):
         super(Encoder, self).__init__()
 
         # shape after fc == (batch_size, nf * nf, embedding_dim)
         self.fc = tf.keras.layers.Dense(embedding_dim, activation='relu')
 
         # Use DenseNet-121 as feature extraction model
-        self.base_model = tf.keras.applications.DenseNet121(include_top=False, weights=None, input_shape=(224, 224, 1))
+        self.base_model = tf.keras.applications.DenseNet121(
+            include_top=False, weights=None, input_shape=input_shape)
 
         # Load pre-trained weights if present
         if pretrain_weights:
@@ -238,12 +242,12 @@ class Decoder(tf.keras.layers.Layer):
 
 class Transformer(tf.keras.Model):
     def __init__(self, num_layers, d_model, num_heads, dff,
-                 target_vocab_size, rate=0.1):
+                 target_vocab_size, rate=0.1, input_shape=(224, 224, 1)):
         super(Transformer, self).__init__()
 
         # self.encoder = Encoder(num_layers, d_model, num_heads, dff,
         #                        input_vocab_size, pe_input, rate)
-        self.encoder = Encoder(d_model)
+        self.encoder = Encoder(d_model, input_shape)
 
         self.decoder = Decoder(num_layers, d_model, num_heads, dff,
                                target_vocab_size, target_vocab_size, rate)

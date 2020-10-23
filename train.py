@@ -50,7 +50,8 @@ def main(args, hparams):
         transformer = Transformer(hparams['n_layer'], hparams['d_model'],
                                   hparams['n_head'], hparams['dff'],
                                   target_vocab_size=target_vocab_size,
-                                  rate=hparams['dropout_rate'])
+                                  rate=hparams['dropout_rate'],
+                                  input_shape=(hparams['img_x'], hparams['img_y'], hparams['img_ch']))
 
         # Model Checkpointing
         ckpt = tf.train.Checkpoint(transformer=transformer,
@@ -161,6 +162,7 @@ if __name__ == '__main__':
     # ISSUE: https://github.com/tensorflow/tensorflow/issues/31870
     import tensorflow as tf
     from datasets.mimic import get_mimic_dataset
+    from datasets.mscoco import get_mscoco_dataset
     from model.transformer import Transformer, default_hparams
     from model.utils import create_target_masks
 
