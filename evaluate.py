@@ -81,8 +81,8 @@ def evaluate(inp_img, transformer, tokenizer, max_length=128):
 def main(args, hparams):
 
     # Get test dataset
-    test_dataset, tokenizer = get_mimic_dataset(args.csv_root, args.vocab_root, args.mimic_root,
-                                                batch_size=args.batch_size, dataset='test')
+    test_dataset, tokenizer = get_mscoco_dataset(args.data_root, args.vocab_root,
+                                                  batch_size=args.batch_size, mode='val')
 
     # Define model
     target_vocab_size = tokenizer.get_vocab_size()
@@ -107,28 +107,29 @@ def main(args, hparams):
 
     #################### Run inference ####################
     test_dataset_iterator = test_dataset.as_numpy_iterator()
-    batch = test_dataset_iterator.next()
 
-    true_img = batch[0]
-    true_txt = tokenizer.decode(numpy.trim_zeros(batch[1][0], 'b'))
+    for i in range(32):
+        batch = test_dataset_iterator.next()
 
-    result, attention_weights = evaluate(true_img, transformer=transformer, tokenizer=tokenizer)
+        true_img = batch[0]
+        true_txt = tokenizer.decode(numpy.trim_zeros(batch[1][0], 'b'))
 
-    predicted_sentence = tokenizer.decode(result)
+        result, attention_weights = evaluate(true_img, transformer=transformer, tokenizer=tokenizer)
+        predicted_sentence = tokenizer.decode(result)
 
-    print('Predicted Text:', predicted_sentence)
-    print('True Text:', true_txt)
+        print('-'*10, f' Sample[{i}] ', '-'*10)
+        print('Predicted Text:', predicted_sentence)
+        print('True Text:', true_txt)
 
 
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--csv_root', default='preprocessing/mimic')
-    parser.add_argument('--vocab_root', default='preprocessing/mimic')
-    parser.add_argument('--mimic_root', default='/data/datasets/chest_xray/MIMIC-CXR/mimic-cxr-jpg-2.0.0.physionet.org')
-    parser.add_argument('--model_name', default='train0')
+    parser.add_argument('--vocab_root', default='preprocessing/mscoco')
+    parser.add_argument('--data_root', default='/data/datasets/MS-COCO/2017/')
+    parser.add_argument('--model_name', default='coco_train0')
     parser.add_argument('--model_params', default='model/hparams.json')
-    parser.add_argument('--batch_size', default=16)
+    parser.add_argument('--batch_size', default=1)
     parser.add_argument('--seed', default=42)
     parser.add_argument('--debug_level', default='3')
     parser.add_argument('--gpu', help='comma separated list of GPU(s) to use.', default='')
@@ -149,7 +150,7 @@ if __name__ == '__main__':
     # Import Tensorflow AFTER setting environment variables
     # ISSUE: https://github.com/tensorflow/tensorflow/issues/31870
     import tensorflow as tf
-    from datasets.mimic import get_mimic_dataset
+    from datasets.mscoco import get_mscoco_dataset
     from model.transformer import Transformer, default_hparams
     from model.utils import create_target_masks
 
