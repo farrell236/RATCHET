@@ -32,9 +32,11 @@ def main(args, hparams):
         # Create TF Sparse Categorical Crossentropy Loss Object
         loss_object = tf.keras.losses.SparseCategoricalCrossentropy(
             from_logits=True, reduction='none')
+        loss_object_2 = tf.keras.losses.BinaryCrossentropy(
+            from_logits=True, reduction='none')
 
         # Loss Function
-        def loss_function(real, pred):
+        def txt_loss_function(real, pred):
             mask = tf.math.logical_not(tf.math.equal(real, 0))
             loss_ = loss_object(real, pred)
 
@@ -43,10 +45,16 @@ def main(args, hparams):
 
             return tf.reduce_sum(loss_) / tf.reduce_sum(mask)
 
+        def class_loss_function(real, pred):
+            loss_ = loss_object_2(real, pred)
+            return tf.reduce_sum(loss_)
+
         # Define Loss and Accuracy metrics
         train_loss = tf.keras.metrics.Mean(name='train_loss')
-        train_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(
-            name='train_accuracy')
+        train_txt_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(
+            name='train_txt_accuracy')
+        train_lbl_accuracy = tf.keras.metrics.BinaryAccuracy(
+            name='train_lbl_accuracy')
 
         # Define Model
         target_vocab_size = tokenizer.get_vocab_size()
@@ -74,29 +82,33 @@ def main(args, hparams):
                 print(f'{datetime.datetime.now()}: [*] Checkpoint not found. Skipping.')
 
 
-    def train_step(inp, tar):
+    def train_step(inp, lbl, tar):
         tar_inp = tar[:, :-1]
         tar_real = tar[:, 1:]
+        lbl_real = lbl
 
         combined_mask = create_target_masks(tar_inp)
 
         with tf.GradientTape() as tape:
-            predictions, _ = transformer(inp,
-                                         tar_inp,
-                                         True,
-                                         combined_mask,
-                                         None)
-            loss = loss_function(tar_real, predictions)
+            txt_pred, lbl_pred, _ = transformer(inp,
+                                                tar_inp,
+                                                True,
+                                                combined_mask,
+                                                None)
+            txt_loss = txt_loss_function(tar_real, txt_pred)
+            lbl_loss = class_loss_function(lbl_real, lbl_pred)
+            loss = txt_loss + lbl_loss
 
         gradients = tape.gradient(loss, transformer.trainable_variables)
         optimizer.apply_gradients(zip(gradients, transformer.trainable_variables))
 
         train_loss(loss)
-        train_accuracy(tar_real, predictions)
+        train_txt_accuracy(tar_real, txt_pred)
+        train_lbl_accuracy(lbl_real, lbl_pred)
 
     @tf.function()
-    def distributed_train_step(inp, tar):
-        strategy.run(train_step, args=(inp, tar))
+    def distributed_train_step(inp, lbl, tar):
+        strategy.run(train_step, args=(inp, lbl, tar))
 
     print(f'{datetime.datetime.now()}:', '='*20, 'BEGIN TRAINING', '='*20)
     for epoch in range(init_epoch, init_epoch + args.n_epochs):
@@ -106,14 +118,17 @@ def main(args, hparams):
 
         # Reset Loss and Accuracy Metrics
         train_loss.reset_states()
-        train_accuracy.reset_states()
+        train_txt_accuracy.reset_states()
+        train_lbl_accuracy.reset_states()
 
         # Main Train Step
         t = tqdm.tqdm(enumerate(train_dist_dataset), total=len(train_dataset))
         t_start = datetime.datetime.now()
-        for (batch, (inp, tar)) in t:
-            distributed_train_step(inp, tar)
-            t.set_description(f'{t_start}: Loss {train_loss.result():.4f} Accuracy {train_accuracy.result():.4f}')
+        for (batch, (inp, lbl, tar)) in t:
+            distributed_train_step(inp, lbl, tar)
+            t.set_description(f'{t_start}: Loss {train_loss.result():.4f} '
+                              f'Text Accuracy {train_txt_accuracy.result():.4f} '
+                              f'Label Accuracy {train_lbl_accuracy.result():.4f} ')
 
         # Save Checkpoint
         ckpt_save_path = ckpt_manager.save()
@@ -122,7 +137,9 @@ def main(args, hparams):
         print(f'{datetime.datetime.now()}: '
               f'Saving checkpoint for epoch {epoch} at {ckpt_save_path}')
         print(f'{datetime.datetime.now()}: '
-              f'Epoch {epoch} Loss {train_loss.result():.4f} Accuracy {train_accuracy.result():.4f}')
+              f'Epoch {epoch} Loss {train_loss.result():.4f} '
+              f'Text Accuracy {train_txt_accuracy.result():.4f} '
+              f'Label Accuracy {train_lbl_accuracy.result():.4f} ')
         print(f'{datetime.datetime.now()}: '
               f'Time taken for epoch: {time.time() - start} secs\n')
 
@@ -135,7 +152,7 @@ if __name__ == '__main__':
     parser.add_argument('--csv_root', default='preprocessing/mimic')
     parser.add_argument('--vocab_root', default='preprocessing/mimic')
     parser.add_argument('--mimic_root', default='/data/datasets/chest_xray/MIMIC-CXR/mimic-cxr-jpg-2.0.0.physionet.org')
-    parser.add_argument('--model_name', default='train3')
+    parser.add_argument('--model_name', default='train1')
     parser.add_argument('--model_params', default='model/hparams.json')
     parser.add_argument('--n_epochs', default=20)
     parser.add_argument('--init_lr', default=1e-4)

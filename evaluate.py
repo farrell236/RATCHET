@@ -1,10 +1,11 @@
 import argparse
 import datetime
 import json
-import numpy
 import os
 import tqdm
 
+import numpy as np
+import pandas as pd
 
 def top_k_logits(logits, k):
     if k == 0:
@@ -49,15 +50,22 @@ def evaluate(inp_img, transformer, tokenizer, max_length=128):
     # The first token to the transformer should be the start token
     output = tf.convert_to_tensor([[tokenizer.token_to_id('<s>')]])
 
+    # txt_pred, lbl_pred, attention_weights = transformer(inp_img,
+    #                                                     output,
+    #                                                     False,
+    #                                                     create_target_masks(output),
+    #                                                     None)
+
+
     for _ in tqdm.tqdm(range(max_length)):
         combined_mask = create_target_masks(output)
 
         # predictions.shape == (batch_size, seq_len, vocab_size)
-        predictions, attention_weights = transformer(inp_img,
-                                                     output,
-                                                     False,
-                                                     combined_mask,
-                                                     None)
+        predictions, lbl_pred, attention_weights = transformer(inp_img,
+                                                            output,
+                                                            False,
+                                                            combined_mask,
+                                                            None)
 
         # select the last word from the seq_len dimension
         predictions = predictions[:, -1, :]  # (batch_size, vocab_size)
@@ -69,20 +77,21 @@ def evaluate(inp_img, transformer, tokenizer, max_length=128):
 
         # return the result if the predicted_id is equal to the end token
         if predicted_id == 2:  # stop token #tokenizer_en.vocab_size + 1:
-            return tf.squeeze(output, axis=0)[1:], attention_weights
+            return tf.squeeze(output, axis=0)[1:], lbl_pred, attention_weights
 
         # concatentate the predicted_id to the output which is given to the decoder
         # as its input.
         output = tf.concat([output, predicted_id], axis=-1)
 
-    return tf.squeeze(output, axis=0)[1:], attention_weights
+
+    return tf.squeeze(output, axis=0)[1:], lbl_pred, attention_weights
 
 
 def main(args, hparams):
 
     # Get test dataset
     test_dataset, tokenizer = get_mimic_dataset(args.csv_root, args.vocab_root, args.mimic_root,
-                                                batch_size=args.batch_size, dataset='test')
+                                                batch_size=args.batch_size, mode='test')
 
     # Define model
     target_vocab_size = tokenizer.get_vocab_size()
@@ -106,19 +115,53 @@ def main(args, hparams):
 
 
     #################### Run inference ####################
-    test_dataset_iterator = test_dataset.as_numpy_iterator()
-    batch = test_dataset_iterator.next()
 
-    true_img = batch[0]
-    true_txt = tokenizer.decode(numpy.trim_zeros(batch[1][0], 'b'))
+    inp_all = []
+    lbl_true_all = []
+    lbl_pred_all = []
+    tar_true_all = []
+    tar_pred_all = []
 
-    result, attention_weights = evaluate(true_img, transformer=transformer, tokenizer=tokenizer)
+    t = tqdm.tqdm(enumerate(test_dataset), total=len(test_dataset))
+    for (batch, (inp, lbl, tar)) in t:
 
-    predicted_sentence = tokenizer.decode(result)
+        true_lbl = lbl
+        true_txt = tokenizer.decode(np.trim_zeros(tar[0].numpy(), 'b'))
 
-    print('Predicted Text:', predicted_sentence)
-    print('True Text:', true_txt)
+        result, pred_lbl, attention_weights = evaluate(
+            inp, transformer=transformer, tokenizer=tokenizer)
 
+        inp_all.append(inp)
+        lbl_true_all.append(true_lbl)
+        lbl_pred_all.append(pred_lbl)
+        tar_true_all.append(true_txt)
+        tar_pred_all.append(result)
+
+    lbl_true_all = np.concatenate(lbl_true_all, axis=0)
+    lbl_pred_all = np.concatenate(lbl_pred_all, axis=0)
+
+    from sklearn.metrics import f1_score, roc_curve, precision_recall_curve, auc, accuracy_score, roc_auc_score
+    from matplotlib import pyplot
+
+    for i in range(14):
+        # precision, recall, thresholds = precision_recall_curve(y_true_all[:, i], y_pred_all[:, i])
+        fpr, tpr, thresholds = roc_curve(lbl_true_all[:, i], lbl_pred_all[:, i])
+        auc_score = auc(fpr, tpr)
+        print(i, auc_score)
+
+    tar_pred_all = tokenizer.decode_batch(tar_pred_all)
+    lbl_true_all_df = pd.DataFrame(lbl_true_all)
+    lbl_pred_all_df = pd.DataFrame(lbl_pred_all)
+    tar_true_all_df = pd.DataFrame(tar_true_all)
+    tar_pred_all_df = pd.DataFrame(tar_pred_all)
+
+    all_true = pd.concat((lbl_true_all_df, tar_true_all_df), axis=1)
+    all_pred = pd.concat((lbl_pred_all_df, tar_pred_all_df), axis=1)
+
+    all_true.to_csv('all_true.csv', index=False, header=False)
+    all_pred.to_csv('all_pred.csv', index=False, header=False)
+
+    print('----- EVAL COMPLETE -----')
 
 if __name__ == '__main__':
 
@@ -126,12 +169,12 @@ if __name__ == '__main__':
     parser.add_argument('--csv_root', default='preprocessing/mimic')
     parser.add_argument('--vocab_root', default='preprocessing/mimic')
     parser.add_argument('--mimic_root', default='/data/datasets/chest_xray/MIMIC-CXR/mimic-cxr-jpg-2.0.0.physionet.org')
-    parser.add_argument('--model_name', default='train0')
+    parser.add_argument('--model_name', default='train1')
     parser.add_argument('--model_params', default='model/hparams.json')
-    parser.add_argument('--batch_size', default=16)
+    parser.add_argument('--batch_size', default=1)
     parser.add_argument('--seed', default=42)
     parser.add_argument('--debug_level', default='3')
-    parser.add_argument('--gpu', help='comma separated list of GPU(s) to use.', default='')
+    parser.add_argument('--gpu', help='comma separated list of GPU(s) to use.', default='0')
     args = parser.parse_args()
 
     # 0 = all messages are logged (default behavior)

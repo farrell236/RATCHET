@@ -185,6 +185,11 @@ class Encoder(tf.keras.layers.Layer):
         # shape after fc == (batch_size, nf * nf, embedding_dim)
         self.fc = tf.keras.layers.Dense(embedding_dim, activation='relu')
 
+        # shape after logits_layer == (batch_size, 14)
+        self.pool = tf.keras.layers.GlobalAveragePooling2D()
+        self.fc2 = tf.keras.layers.Dense(1024, activation='relu')
+        self.logits_layer = tf.keras.layers.Dense(14)
+
         # Use DenseNet-121 as feature extraction model
         self.base_model = tf.keras.applications.DenseNet121(
             include_top=False, weights=None, input_shape=input_shape)
@@ -194,12 +199,19 @@ class Encoder(tf.keras.layers.Layer):
             self.base_model.load_weights(pretrain_weights, by_name=True)
 
     def call(self, x, **kwargs):
+        # Base model feature extraction
         x = self.base_model(x)
+
+        # Classification head
+        x0 = self.pool(x)
+        x0 = self.fc2(x0)
+        x0 = self.logits_layer(x0)
+
         # DenseNet-121 output is (batch_size, ?, ?, 1024)
         s = tf.shape(x)
         x = tf.reshape(x, (s[0], s[1] * s[2], x.shape[3]))
         x = self.fc(x)
-        return x
+        return x, x0
 
 
 
@@ -256,7 +268,7 @@ class Transformer(tf.keras.Model):
 
     def call(self, inp, tar, training,
              look_ahead_mask, dec_padding_mask):
-        enc_output = self.encoder(inp)  # (batch_size, inp_seq_len, d_model)
+        enc_output, enc_logits = self.encoder(inp)  # (batch_size, inp_seq_len, d_model)
 
         # dec_output.shape == (batch_size, tar_seq_len, d_model)
         dec_output, attention_weights = self.decoder(
@@ -264,4 +276,4 @@ class Transformer(tf.keras.Model):
 
         final_output = self.final_layer(dec_output)  # (batch_size, tar_seq_len, target_vocab_size)
 
-        return final_output, attention_weights
+        return final_output, enc_logits, attention_weights
