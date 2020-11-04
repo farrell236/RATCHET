@@ -9,21 +9,22 @@ the [COCO Caption Evaluation](https://github.com/tylin/coco-caption) library, an
 - python (tested 2.7/3.6)
 
 ## Files ##
-
-- evals.py: The file includes MIMICEavlCap and COCOEavlCap class.
+- eval: The file includes MIMICEavlCap and COCOEavlCap class.
 - tokenizer: Python wrapper of Stanford CoreNLP PTBTokenizer
-- coco: pycocotools from [cocodataset](https://github.com/cocodataset) / [cocoapi](https://github.com/cocodataset/cocoapi)
 - bleu: Bleu evalutation codes
 - meteor: Meteor evaluation codes
 - rouge: Rouge-L evaluation codes
 - cider: CIDEr evaluation codes
 - spice: SPICE evaluation codes
+- pycocotools and common: Adapted from [COCO Dataset API](https://github.com/cocodataset/cocoapi)
 
 ## Setup ##
-
 - You will first need to download the [Stanford CoreNLP 3.6.0](http://stanfordnlp.github.io/CoreNLP/index.html) code and models for use by SPICE. To do this, run either: 
     - ``python get_stanford_models.py``
     - ``./get_stanford_models.sh``
+    
+- Run ``make`` in this directory to build dependencies for ``pycocotools``. Requires ``cython>=0.27.3``
+    
 ## Notes ##
 - SPICE will try to create a cache of parsed sentences in ./spice/cache/. This dramatically speeds up repeated evaluations. 
     - Without altering this code, use the environment variables ``SPICE_CACHE_DIR`` and ``SPICE_TEMP_DIR`` to set the cache directory.
@@ -32,7 +33,6 @@ the [COCO Caption Evaluation](https://github.com/tylin/coco-caption) library, an
 
 
 ## References ##
-
 - [Microsoft COCO Captions: Data Collection and Evaluation Server](http://arxiv.org/abs/1504.00325)
 - PTBTokenizer: We use the [Stanford Tokenizer](http://nlp.stanford.edu/software/tokenizer.shtml) which is included in [Stanford CoreNLP 3.4.1](http://nlp.stanford.edu/software/corenlp.shtml).
 - BLEU: [BLEU: a Method for Automatic Evaluation of Machine Translation](http://www.aclweb.org/anthology/P02-1040.pdf)
