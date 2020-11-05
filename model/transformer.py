@@ -3,6 +3,8 @@ from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
 
+import datetime
+
 import tensorflow as tf
 
 from .utils import positional_encoding
@@ -191,7 +193,10 @@ class Encoder(tf.keras.layers.Layer):
 
         # Load pre-trained weights if present
         if pretrain_weights:
-            self.base_model.load_weights(pretrain_weights, by_name=True)
+            print(f'{datetime.datetime.now()}: [*] Loading Pretrained DenseNet-121 weights: {pretrain_weights}')
+            self.base_model.load_weights(pretrain_weights)
+        else:
+            print(f'{datetime.datetime.now()}: [*] No Pretrained DenseNet-121 weights specified')
 
     def call(self, x, **kwargs):
         x = self.base_model(x)
@@ -242,12 +247,14 @@ class Decoder(tf.keras.layers.Layer):
 
 class Transformer(tf.keras.Model):
     def __init__(self, num_layers, d_model, num_heads, dff,
-                 target_vocab_size, rate=0.1, input_shape=(224, 224, 1)):
+                 target_vocab_size, rate=0.1, input_shape=(224, 224, 1),
+                 classifier_weights=None):
         super(Transformer, self).__init__()
 
         # self.encoder = Encoder(num_layers, d_model, num_heads, dff,
         #                        input_vocab_size, pe_input, rate)
-        self.encoder = Encoder(d_model, input_shape)
+        self.encoder = Encoder(d_model, input_shape,
+                               pretrain_weights=classifier_weights)
 
         self.decoder = Decoder(num_layers, d_model, num_heads, dff,
                                target_vocab_size, target_vocab_size, rate)

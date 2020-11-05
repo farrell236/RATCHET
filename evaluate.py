@@ -1,10 +1,11 @@
 import argparse
 import datetime
 import json
-import numpy
 import os
 import tqdm
 
+import numpy as np
+import pandas as pd
 
 def top_k_logits(logits, k):
     if k == 0:
@@ -61,8 +62,8 @@ def evaluate(inp_img, transformer, tokenizer, max_length=128):
 
         # select the last word from the seq_len dimension
         predictions = predictions[:, -1, :]  # (batch_size, vocab_size)
-        predictions = top_k_logits(predictions, k=6)
-        predictions = top_p_logits(predictions, p=0.5)
+        # predictions = top_k_logits(predictions, k=6)
+        # predictions = top_p_logits(predictions, p=0.5)
 
         predicted_id = tf.cast(tf.argmax(predictions, axis=-1), tf.int32)[:, tf.newaxis]
         # predicted_id = tf.random.categorical(predictions, num_samples=1, dtype=tf.int32)
@@ -81,8 +82,8 @@ def evaluate(inp_img, transformer, tokenizer, max_length=128):
 def main(args, hparams):
 
     # Get test dataset
-    test_dataset, tokenizer = get_mscoco_dataset(args.data_root, args.vocab_root,
-                                                  batch_size=args.batch_size, mode='val')
+    test_dataset, tokenizer = get_mimic_dataset(args.csv_root, args.vocab_root, args.mimic_root,
+                                                batch_size=args.batch_size, mode='test')
 
     # Define model
     target_vocab_size = tokenizer.get_vocab_size()
@@ -106,33 +107,34 @@ def main(args, hparams):
 
 
     #################### Run inference ####################
-    test_dataset_iterator = test_dataset.as_numpy_iterator()
+    pred_txt = dict()
+    true_txt = dict()
 
-    for i in range(32):
-        batch = test_dataset_iterator.next()
+    t = tqdm.tqdm(enumerate(test_dataset), total=len(test_dataset))
+    for (idx, (inp, tar)) in t:
+        true_txt[idx] = tokenizer.decode(np.trim_zeros(tar[0].numpy(), 'b')[1:-1])
+        result, attention_weights = evaluate(inp, transformer=transformer, tokenizer=tokenizer)
+        pred_txt[idx] = tokenizer.decode(result)
 
-        true_img = batch[0]
-        true_txt = tokenizer.decode(numpy.trim_zeros(batch[1][0], 'b'))
+    pred_txt_df = pd.DataFrame.from_dict(pred_txt, orient='index')
+    true_txt_df = pd.DataFrame.from_dict(true_txt, orient='index')
 
-        result, attention_weights = evaluate(true_img, transformer=transformer, tokenizer=tokenizer)
-        predicted_sentence = tokenizer.decode(result)
-
-        print('-'*10, f' Sample[{i}] ', '-'*10)
-        print('Predicted Text:', predicted_sentence)
-        print('True Text:', true_txt)
+    pred_txt_df.to_csv('/tmp/all_pred.csv', index=False, header=False)
+    true_txt_df.to_csv('/tmp/all_true.csv', index=False, header=False)
 
 
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--vocab_root', default='preprocessing/mscoco')
-    parser.add_argument('--data_root', default='/data/datasets/MS-COCO/2017/')
-    parser.add_argument('--model_name', default='coco_train0')
+    parser.add_argument('--csv_root', default='preprocessing/mimic')
+    parser.add_argument('--vocab_root', default='preprocessing/mimic')
+    parser.add_argument('--mimic_root', default='/data/datasets/chest_xray/MIMIC-CXR/mimic-cxr-jpg-2.0.0.physionet.org')
+    parser.add_argument('--model_name', default='train05')
     parser.add_argument('--model_params', default='model/hparams.json')
     parser.add_argument('--batch_size', default=1)
     parser.add_argument('--seed', default=42)
     parser.add_argument('--debug_level', default='3')
-    parser.add_argument('--gpu', help='comma separated list of GPU(s) to use.', default='')
+    parser.add_argument('--gpu', help='comma separated list of GPU(s) to use.', default='0')
     args = parser.parse_args()
 
     # 0 = all messages are logged (default behavior)
@@ -150,7 +152,7 @@ if __name__ == '__main__':
     # Import Tensorflow AFTER setting environment variables
     # ISSUE: https://github.com/tensorflow/tensorflow/issues/31870
     import tensorflow as tf
-    from datasets.mscoco import get_mscoco_dataset
+    from datasets.mimic import get_mimic_dataset
     from model.transformer import Transformer, default_hparams
     from model.utils import create_target_masks
 

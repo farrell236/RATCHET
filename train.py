@@ -15,12 +15,14 @@ def main(args, hparams):
     # Load dataset
     BATCH_SIZE_PER_REPLICA = args.batch_size
     GLOBAL_BATCH_SIZE = BATCH_SIZE_PER_REPLICA * strategy.num_replicas_in_sync
-    train_dataset, tokenizer = get_mscoco_dataset(args.data_root, args.vocab_root, batch_size=GLOBAL_BATCH_SIZE)
+    train_dataset, tokenizer = get_mimic_dataset(args.csv_root, args.vocab_root, args.mimic_root,
+                                                 batch_size=GLOBAL_BATCH_SIZE)
     train_dist_dataset = strategy.experimental_distribute_dataset(train_dataset)
 
     # Define computational graph in a Strategy wrapper
     with strategy.scope():
         # Define learning rate scheduler
+        print(f'{datetime.datetime.now()}: [*] Using Custom Learning Rate Scheduler')
         learning_rate = args.init_lr if args.init_lr is not None else \
             CustomSchedule(hparams['d_model'], warmup_steps=len(train_dataset) // 2)
 
@@ -53,7 +55,8 @@ def main(args, hparams):
                                   hparams['n_head'], hparams['dff'],
                                   target_vocab_size=target_vocab_size,
                                   rate=hparams['dropout_rate'],
-                                  input_shape=(hparams['img_x'], hparams['img_y'], hparams['img_ch']))
+                                  input_shape=(hparams['img_x'], hparams['img_y'], hparams['img_ch']),
+                                  classifier_weights=args.classifier_weights)
 
         # Model Checkpointing
         ckpt = tf.train.Checkpoint(transformer=transformer,
@@ -131,12 +134,14 @@ def main(args, hparams):
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--vocab_root', default='preprocessing/mscoco')
-    parser.add_argument('--data_root', default='/data/datasets/MS-COCO/2017/')
-    parser.add_argument('--model_name', default='coco_train0')
+    parser.add_argument('--csv_root', default='preprocessing/mimic')
+    parser.add_argument('--vocab_root', default='preprocessing/mimic')
+    parser.add_argument('--mimic_root', default='/data/datasets/chest_xray/MIMIC-CXR/mimic-cxr-jpg-2.0.0.physionet.org')
+    parser.add_argument('--model_name', default='train05')
     parser.add_argument('--model_params', default='model/hparams.json')
+    parser.add_argument('--classifier_weights', default='classifier/checkpoint/epoch_9.hdf5')
     parser.add_argument('--n_epochs', default=20)
-    parser.add_argument('--init_lr', default=1e-4)
+    parser.add_argument('--init_lr', default=None)
     parser.add_argument('--batch_size', default=16)
     parser.add_argument('--resume', default=True)
     parser.add_argument('--seed', default=42)
@@ -162,10 +167,18 @@ if __name__ == '__main__':
     # Import Tensorflow AFTER setting environment variables
     # ISSUE: https://github.com/tensorflow/tensorflow/issues/31870
     import tensorflow as tf
-    from datasets.mscoco import get_mscoco_dataset
+    from datasets.mimic import get_mimic_dataset
     from model.transformer import Transformer, default_hparams
     from model.utils import create_target_masks
     from model.lr_scheduler import CustomSchedule
+
+    gpus = tf.config.experimental.list_physical_devices('GPU')
+    if gpus:
+        try:
+            for gpu in gpus:
+                tf.config.experimental.set_memory_growth(gpu, True)
+        except RuntimeError as e:
+            print(e)
 
     # Set Tensorflow 2.0 logging level
     error_level = {'0': 'DEBUG', '1': 'INFO', '2': 'WARN', '3': 'ERROR'}
