@@ -1,0 +1,113 @@
+(tf-2.x) farrell@skylab:/vol/medic01/users/bh1511/PyCharm_Deployment/RATCHET/classifier$ python train.py 
+2020-10-30 10:33:27.352686: I tensorflow/stream_executor/platform/default/dso_loader.cc:48] Successfully opened dynamic library libcudart.so.10.1
+2020-10-30 10:33:30.193982: I tensorflow/stream_executor/platform/default/dso_loader.cc:48] Successfully opened dynamic library libcuda.so.1
+2020-10-30 10:33:30.198165: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1716] Found device 0 with properties: 
+pciBusID: 0000:01:00.0 name: TITAN X (Pascal) computeCapability: 6.1
+coreClock: 1.531GHz coreCount: 28 deviceMemorySize: 11.91GiB deviceMemoryBandwidth: 447.48GiB/s
+2020-10-30 10:33:30.198753: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1716] Found device 1 with properties: 
+pciBusID: 0000:02:00.0 name: TITAN X (Pascal) computeCapability: 6.1
+coreClock: 1.531GHz coreCount: 28 deviceMemorySize: 11.91GiB deviceMemoryBandwidth: 447.48GiB/s
+2020-10-30 10:33:30.198774: I tensorflow/stream_executor/platform/default/dso_loader.cc:48] Successfully opened dynamic library libcudart.so.10.1
+2020-10-30 10:33:30.199941: I tensorflow/stream_executor/platform/default/dso_loader.cc:48] Successfully opened dynamic library libcublas.so.10
+2020-10-30 10:33:30.200968: I tensorflow/stream_executor/platform/default/dso_loader.cc:48] Successfully opened dynamic library libcufft.so.10
+2020-10-30 10:33:30.201177: I tensorflow/stream_executor/platform/default/dso_loader.cc:48] Successfully opened dynamic library libcurand.so.10
+2020-10-30 10:33:30.202278: I tensorflow/stream_executor/platform/default/dso_loader.cc:48] Successfully opened dynamic library libcusolver.so.10
+2020-10-30 10:33:30.202809: I tensorflow/stream_executor/platform/default/dso_loader.cc:48] Successfully opened dynamic library libcusparse.so.10
+2020-10-30 10:33:30.204974: I tensorflow/stream_executor/platform/default/dso_loader.cc:48] Successfully opened dynamic library libcudnn.so.7
+2020-10-30 10:33:30.207186: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1858] Adding visible gpu devices: 0, 1
+2020-10-30 10:33:30.207545: I tensorflow/core/platform/cpu_feature_guard.cc:142] This TensorFlow binary is optimized with oneAPI Deep Neural Network Library (oneDNN)to use the following CPU instructions in performance-critical operations:  AVX2 FMA
+To enable them in other operations, rebuild TensorFlow with the appropriate compiler flags.
+2020-10-30 10:33:30.239679: I tensorflow/core/platform/profile_utils/cpu_utils.cc:104] CPU Frequency: 2998450000 Hz
+2020-10-30 10:33:30.240939: I tensorflow/compiler/xla/service/service.cc:168] XLA service 0x55b0ce419c10 initialized for platform Host (this does not guarantee that XLA will be used). Devices:
+2020-10-30 10:33:30.240986: I tensorflow/compiler/xla/service/service.cc:176]   StreamExecutor device (0): Host, Default Version
+2020-10-30 10:33:30.459846: I tensorflow/compiler/xla/service/service.cc:168] XLA service 0x55b0d07a9aa0 initialized for platform CUDA (this does not guarantee that XLA will be used). Devices:
+2020-10-30 10:33:30.459904: I tensorflow/compiler/xla/service/service.cc:176]   StreamExecutor device (0): TITAN X (Pascal), Compute Capability 6.1
+2020-10-30 10:33:30.459920: I tensorflow/compiler/xla/service/service.cc:176]   StreamExecutor device (1): TITAN X (Pascal), Compute Capability 6.1
+2020-10-30 10:33:30.464623: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1716] Found device 0 with properties: 
+pciBusID: 0000:01:00.0 name: TITAN X (Pascal) computeCapability: 6.1
+coreClock: 1.531GHz coreCount: 28 deviceMemorySize: 11.91GiB deviceMemoryBandwidth: 447.48GiB/s
+2020-10-30 10:33:30.466362: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1716] Found device 1 with properties: 
+pciBusID: 0000:02:00.0 name: TITAN X (Pascal) computeCapability: 6.1
+coreClock: 1.531GHz coreCount: 28 deviceMemorySize: 11.91GiB deviceMemoryBandwidth: 447.48GiB/s
+2020-10-30 10:33:30.466423: I tensorflow/stream_executor/platform/default/dso_loader.cc:48] Successfully opened dynamic library libcudart.so.10.1
+2020-10-30 10:33:30.466466: I tensorflow/stream_executor/platform/default/dso_loader.cc:48] Successfully opened dynamic library libcublas.so.10
+2020-10-30 10:33:30.466499: I tensorflow/stream_executor/platform/default/dso_loader.cc:48] Successfully opened dynamic library libcufft.so.10
+2020-10-30 10:33:30.466530: I tensorflow/stream_executor/platform/default/dso_loader.cc:48] Successfully opened dynamic library libcurand.so.10
+2020-10-30 10:33:30.466561: I tensorflow/stream_executor/platform/default/dso_loader.cc:48] Successfully opened dynamic library libcusolver.so.10
+2020-10-30 10:33:30.466591: I tensorflow/stream_executor/platform/default/dso_loader.cc:48] Successfully opened dynamic library libcusparse.so.10
+2020-10-30 10:33:30.466623: I tensorflow/stream_executor/platform/default/dso_loader.cc:48] Successfully opened dynamic library libcudnn.so.7
+2020-10-30 10:33:30.470213: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1858] Adding visible gpu devices: 0, 1
+2020-10-30 10:33:30.470250: I tensorflow/stream_executor/platform/default/dso_loader.cc:48] Successfully opened dynamic library libcudart.so.10.1
+2020-10-30 10:33:31.430363: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1257] Device interconnect StreamExecutor with strength 1 edge matrix:
+2020-10-30 10:33:31.430399: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1263]      0 1 
+2020-10-30 10:33:31.430405: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1276] 0:   N Y 
+2020-10-30 10:33:31.430409: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1276] 1:   Y N 
+2020-10-30 10:33:31.432310: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1402] Created TensorFlow device (/job:localhost/replica:0/task:0/device:GPU:0 with 11221 MB memory) -> physical GPU (device: 0, name: TITAN X (Pascal), pci bus id: 0000:01:00.0, compute capability: 6.1)
+2020-10-30 10:33:31.433248: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1402] Created TensorFlow device (/job:localhost/replica:0/task:0/device:GPU:1 with 11222 MB memory) -> physical GPU (device: 1, name: TITAN X (Pascal), pci bus id: 0000:02:00.0, compute capability: 6.1)
+Number of devices: 2
+Epoch 1/10
+WARNING:tensorflow:From /vol/medic01/users/bh1511/_venv/tf-2.x/lib/python3.7/site-packages/tensorflow/python/data/ops/multi_device_iterator_ops.py:601: get_next_as_optional (from tensorflow.python.data.ops.iterator_ops) is deprecated and will be removed in a future version.
+Instructions for updating:
+Use `tf.data.Iterator.get_next_as_optional()` instead.
+2020-10-30 10:34:38.622950: I tensorflow/stream_executor/platform/default/dso_loader.cc:48] Successfully opened dynamic library libcublas.so.10
+2020-10-30 10:34:40.098691: I tensorflow/stream_executor/platform/default/dso_loader.cc:48] Successfully opened dynamic library libcudnn.so.7
+7437/7437 [==============================] - ETA: 0s - loss: 0.3299 - accuracy: 0.3028     
+Epoch 00001: val_loss improved from inf to 0.33380, saving model to weights-improvement-01-0.29.hdf5
+End epoch 0 of training; saving model weights to: checkpoint/epoch_0.hdf5
+Sanity check: densenet121
+7437/7437 [==============================] - 5907s 794ms/step - loss: 0.3299 - accuracy: 0.3028 - val_loss: 0.3338 - val_accuracy: 0.2853
+Epoch 2/10
+7437/7437 [==============================] - ETA: 0s - loss: 0.3121 - accuracy: 0.3295     
+Epoch 00002: val_loss did not improve from 0.33380
+End epoch 1 of training; saving model weights to: checkpoint/epoch_1.hdf5
+Sanity check: densenet121
+7437/7437 [==============================] - 5996s 806ms/step - loss: 0.3121 - accuracy: 0.3295 - val_loss: 0.3413 - val_accuracy: 0.2501
+Epoch 3/10
+7437/7437 [==============================] - ETA: 0s - loss: 0.3054 - accuracy: 0.3371     
+Epoch 00003: val_loss improved from 0.33380 to 0.32470, saving model to weights-improvement-03-0.28.hdf5
+End epoch 2 of training; saving model weights to: checkpoint/epoch_2.hdf5
+Sanity check: densenet121
+7437/7437 [==============================] - 6389s 859ms/step - loss: 0.3054 - accuracy: 0.3371 - val_loss: 0.3247 - val_accuracy: 0.2833
+Epoch 4/10
+7437/7437 [==============================] - ETA: 0s - loss: 0.3010 - accuracy: 0.3414     dA
+Epoch 00004: val_loss improved from 0.32470 to 0.31995, saving model to weights-improvement-04-0.31.hdf5
+End epoch 3 of training; saving model weights to: checkpoint/epoch_3.hdf5
+Sanity check: densenet121
+7437/7437 [==============================] - 7187s 966ms/step - loss: 0.3010 - accuracy: 0.3414 - val_loss: 0.3199 - val_accuracy: 0.3078
+Epoch 5/10
+7437/7437 [==============================] - ETA: 0s - loss: 0.2975 - accuracy: 0.3443     
+Epoch 00005: val_loss improved from 0.31995 to 0.31528, saving model to weights-improvement-05-0.31.hdf5
+End epoch 4 of training; saving model weights to: checkpoint/epoch_4.hdf5
+Sanity check: densenet121
+7437/7437 [==============================] - 6312s 849ms/step - loss: 0.2975 - accuracy: 0.3443 - val_loss: 0.3153 - val_accuracy: 0.3129
+Epoch 6/10
+7437/7437 [==============================] - ETA: 0s - loss: 0.2947 - accuracy: 0.3467     
+Epoch 00006: val_loss improved from 0.31528 to 0.31498, saving model to weights-improvement-06-0.30.hdf5
+End epoch 5 of training; saving model weights to: checkpoint/epoch_5.hdf5
+Sanity check: densenet121
+7437/7437 [==============================] - 6205s 834ms/step - loss: 0.2947 - accuracy: 0.3467 - val_loss: 0.3150 - val_accuracy: 0.3042
+Epoch 7/10
+7437/7437 [==============================] - ETA: 0s - loss: 0.2925 - accuracy: 0.3470     
+Epoch 00007: val_loss improved from 0.31498 to 0.31336, saving model to weights-improvement-07-0.30.hdf5
+End epoch 6 of training; saving model weights to: checkpoint/epoch_6.hdf5
+Sanity check: densenet121
+7437/7437 [==============================] - 6154s 827ms/step - loss: 0.2925 - accuracy: 0.3470 - val_loss: 0.3134 - val_accuracy: 0.3007
+Epoch 8/10
+7437/7437 [==============================] - ETA: 0s - loss: 0.2903 - accuracy: 0.3486     
+Epoch 00008: val_loss did not improve from 0.31336
+End epoch 7 of training; saving model weights to: checkpoint/epoch_7.hdf5
+Sanity check: densenet121
+7437/7437 [==============================] - 6068s 816ms/step - loss: 0.2903 - accuracy: 0.3486 - val_loss: 0.3247 - val_accuracy: 0.2593
+Epoch 9/10
+7437/7437 [==============================] - ETA: 0s - loss: 0.2883 - accuracy: 0.3507     
+Epoch 00009: val_loss improved from 0.31336 to 0.30904, saving model to weights-improvement-09-0.32.hdf5
+End epoch 8 of training; saving model weights to: checkpoint/epoch_8.hdf5
+Sanity check: densenet121
+7437/7437 [==============================] - 6112s 822ms/step - loss: 0.2883 - accuracy: 0.3507 - val_loss: 0.3090 - val_accuracy: 0.3211
+Epoch 10/10
+7437/7437 [==============================] - ETA: 0s - loss: 0.2862 - accuracy: 0.3519     
+Epoch 00010: val_loss did not improve from 0.30904
+End epoch 9 of training; saving model weights to: checkpoint/epoch_9.hdf5
+Sanity check: densenet121
+7437/7437 [==============================] - 6148s 827ms/step - loss: 0.2862 - accuracy: 0.3519 - val_loss: 0.3095 - val_accuracy: 0.3517
+
