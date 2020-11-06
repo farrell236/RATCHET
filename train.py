@@ -22,9 +22,12 @@ def main(args, hparams):
     # Define computational graph in a Strategy wrapper
     with strategy.scope():
         # Define learning rate scheduler
-        print(f'{datetime.datetime.now()}: [*] Using Custom Learning Rate Scheduler')
-        learning_rate = args.init_lr if args.init_lr is not None else \
-            CustomSchedule(hparams['d_model'], warmup_steps=len(train_dataset) // 2)
+        if args.init_lr is not None:
+            print(f'{datetime.datetime.now()}: [*] Init learning_rate: {args.init_lr}')
+            learning_rate = args.init_lr
+        else:
+            print(f'{datetime.datetime.now()}: [*] Using Custom Learning Rate Scheduler')
+            learning_rate = CustomSchedule(hparams['d_model'], warmup_steps=len(train_dataset) // 2)
 
         # Create Adam Optimiser
         optimizer = tf.keras.optimizers.Adam(
@@ -42,7 +45,7 @@ def main(args, hparams):
             mask = tf.cast(mask, dtype=loss_.dtype)
             loss_ *= mask
 
-            return tf.reduce_sum(loss_) / tf.reduce_sum(mask)
+            return tf.reduce_sum(loss_)
 
         # Define Loss and Accuracy metrics
         train_loss = tf.keras.metrics.Mean(name='train_loss')
@@ -51,15 +54,12 @@ def main(args, hparams):
 
         # Define Model
         target_vocab_size = tokenizer.get_vocab_size()
-        transformer = Transformer(hparams['n_layer'], hparams['d_model'],
-                                  hparams['n_head'], hparams['dff'],
-                                  target_vocab_size=target_vocab_size,
-                                  rate=hparams['dropout_rate'],
-                                  input_shape=(hparams['img_x'], hparams['img_y'], hparams['img_ch']),
-                                  classifier_weights=args.classifier_weights)
+        encoder = CNN_Encoder(hparams['d_model'], input_shape=(hparams['img_x'], hparams['img_y'], hparams['img_ch']))
+        decoder = RNN_Decoder(hparams['d_model'], hparams['dff'], target_vocab_size)
 
         # Model Checkpointing
-        ckpt = tf.train.Checkpoint(transformer=transformer,
+        ckpt = tf.train.Checkpoint(encoder=encoder,
+                                   decoder=decoder,
                                    optimizer=optimizer)
         checkpoint_path = os.path.join('checkpoints', args.model_name)
         ckpt_manager = tf.train.CheckpointManager(ckpt, checkpoint_path, max_to_keep=args.max_ckpt)
@@ -76,25 +76,33 @@ def main(args, hparams):
                 print(f'{datetime.datetime.now()}: [*] Checkpoint not found. Skipping.')
 
 
-    def train_step(inp, tar):
-        tar_inp = tar[:, :-1]
-        tar_real = tar[:, 1:]
+    def train_step(img_tensor, target):
 
-        combined_mask = create_target_masks(tar_inp)
+        loss = 0
+
+        # initializing the hidden state for each batch
+        # because the captions are not related from image to image
+        hidden = decoder.reset_state(batch_size=target.shape[0])
+
+        dec_input = tf.expand_dims([tokenizer.token_to_id('<s>')] * target.shape[0], 1)
 
         with tf.GradientTape() as tape:
-            predictions, _ = transformer(inp,
-                                         tar_inp,
-                                         True,
-                                         combined_mask,
-                                         None)
-            loss = loss_function(tar_real, predictions)
+            features = encoder(img_tensor)
 
-        gradients = tape.gradient(loss, transformer.trainable_variables)
-        optimizer.apply_gradients(zip(gradients, transformer.trainable_variables))
+            for i in range(1, target.shape[1]):
+                # passing the features through the decoder
+                predictions, hidden, _ = decoder(dec_input, features, hidden)
 
-        train_loss(loss)
-        train_accuracy(tar_real, predictions)
+                loss += loss_function(target[:, i], predictions)
+
+                # using teacher forcing
+                dec_input = tf.expand_dims(target[:, i], 1)
+
+        trainable_variables = encoder.trainable_variables + decoder.trainable_variables
+        gradients = tape.gradient(loss, trainable_variables)
+        optimizer.apply_gradients(zip(gradients, trainable_variables))
+
+        train_loss(loss/int(target.shape[1]))
 
     @tf.function()
     def distributed_train_step(inp, tar):
@@ -108,7 +116,7 @@ def main(args, hparams):
 
         # Reset Loss and Accuracy Metrics
         train_loss.reset_states()
-        train_accuracy.reset_states()
+        # train_accuracy.reset_states()
 
         # Main Train Step
         t = tqdm.tqdm(enumerate(train_dist_dataset), total=len(train_dataset))
@@ -137,11 +145,10 @@ if __name__ == '__main__':
     parser.add_argument('--csv_root', default='preprocessing/mimic')
     parser.add_argument('--vocab_root', default='preprocessing/mimic')
     parser.add_argument('--mimic_root', default='/data/datasets/chest_xray/MIMIC-CXR/mimic-cxr-jpg-2.0.0.physionet.org')
-    parser.add_argument('--model_name', default='train05')
+    parser.add_argument('--model_name', default='train2')
     parser.add_argument('--model_params', default='model/hparams.json')
-    parser.add_argument('--classifier_weights', default='classifier/checkpoint/epoch_9.hdf5')
     parser.add_argument('--n_epochs', default=20)
-    parser.add_argument('--init_lr', default=None)
+    parser.add_argument('--init_lr', default=1e-4)
     parser.add_argument('--batch_size', default=16)
     parser.add_argument('--resume', default=True)
     parser.add_argument('--seed', default=42)
@@ -168,8 +175,7 @@ if __name__ == '__main__':
     # ISSUE: https://github.com/tensorflow/tensorflow/issues/31870
     import tensorflow as tf
     from datasets.mimic import get_mimic_dataset
-    from model.transformer import Transformer, default_hparams
-    from model.utils import create_target_masks
+    from model.baseline import CNN_Encoder, RNN_Decoder, default_hparams
     from model.lr_scheduler import CustomSchedule
 
     gpus = tf.config.experimental.list_physical_devices('GPU')

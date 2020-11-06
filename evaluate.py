@@ -45,38 +45,32 @@ def top_p_logits(logits, p):
     )
 
 
-def evaluate(inp_img, transformer, tokenizer, max_length=128):
+def evaluate(image, encoder, decoder, tokenizer, max_length=128):
+    attention_plot = np.zeros((max_length, 7*7))
 
-    # The first token to the transformer should be the start token
-    output = tf.convert_to_tensor([[tokenizer.token_to_id('<s>')]])
+    hidden = decoder.reset_state(batch_size=1)
 
-    for _ in tqdm.tqdm(range(max_length)):
-        combined_mask = create_target_masks(output)
+    features = encoder(image)
 
-        # predictions.shape == (batch_size, seq_len, vocab_size)
-        predictions, attention_weights = transformer(inp_img,
-                                                     output,
-                                                     False,
-                                                     combined_mask,
-                                                     None)
+    dec_input = tf.expand_dims([tokenizer.token_to_id('<s>')], 0)
+    result = []
 
-        # select the last word from the seq_len dimension
-        predictions = predictions[:, -1, :]  # (batch_size, vocab_size)
-        # predictions = top_k_logits(predictions, k=6)
-        # predictions = top_p_logits(predictions, p=0.5)
+    for i in range(max_length):
+        predictions, hidden, attention_weights = decoder(dec_input, features, hidden)
 
-        predicted_id = tf.cast(tf.argmax(predictions, axis=-1), tf.int32)[:, tf.newaxis]
-        # predicted_id = tf.random.categorical(predictions, num_samples=1, dtype=tf.int32)
+        attention_plot[i] = tf.reshape(attention_weights, (-1, )).numpy()
 
-        # return the result if the predicted_id is equal to the end token
-        if predicted_id == 2:  # stop token #tokenizer_en.vocab_size + 1:
-            return tf.squeeze(output, axis=0)[1:], attention_weights
+        predicted_id = tf.cast(tf.argmax(predictions, axis=-1), tf.int32)[0].numpy()
+        # predicted_id = tf.random.categorical(predictions, 1)[0][0].numpy()
+        result.append(predicted_id)
 
-        # concatentate the predicted_id to the output which is given to the decoder
-        # as its input.
-        output = tf.concat([output, predicted_id], axis=-1)
+        if predicted_id == 2:
+            return result[:-1], attention_plot
 
-    return tf.squeeze(output, axis=0)[1:], attention_weights
+        dec_input = tf.expand_dims([predicted_id], 0)
+
+    attention_plot = attention_plot[:len(result), :]
+    return result[:-1], attention_plot
 
 
 def main(args, hparams):
@@ -87,14 +81,12 @@ def main(args, hparams):
 
     # Define model
     target_vocab_size = tokenizer.get_vocab_size()
-    transformer = Transformer(hparams['n_layer'], hparams['d_model'],
-                              hparams['n_head'], hparams['dff'],
-                              target_vocab_size=target_vocab_size,
-                              rate=hparams['dropout_rate'],
-                              input_shape=(hparams['img_x'], hparams['img_y'], hparams['img_ch']))
+    encoder = CNN_Encoder(hparams['d_model'], input_shape=(hparams['img_x'], hparams['img_y'], hparams['img_ch']))
+    decoder = RNN_Decoder(hparams['d_model'], hparams['dff'], target_vocab_size)
 
     # Restore checkpoint
-    ckpt = tf.train.Checkpoint(transformer=transformer)
+    ckpt = tf.train.Checkpoint(encoder=encoder,
+                               decoder=decoder)
     checkpoint_path = os.path.join('checkpoints', args.model_name)
     latest_checkpoint = tf.train.latest_checkpoint(checkpoint_path)
 
@@ -113,7 +105,7 @@ def main(args, hparams):
     t = tqdm.tqdm(enumerate(test_dataset), total=len(test_dataset))
     for (idx, (inp, tar)) in t:
         true_txt[idx] = tokenizer.decode(np.trim_zeros(tar[0].numpy(), 'b')[1:-1])
-        result, attention_weights = evaluate(inp, transformer=transformer, tokenizer=tokenizer)
+        result, attention_plot = evaluate(inp, encoder, decoder, tokenizer)
         pred_txt[idx] = tokenizer.decode(result)
 
     pred_txt_df = pd.DataFrame.from_dict(pred_txt, orient='index')
@@ -129,12 +121,12 @@ if __name__ == '__main__':
     parser.add_argument('--csv_root', default='preprocessing/mimic')
     parser.add_argument('--vocab_root', default='preprocessing/mimic')
     parser.add_argument('--mimic_root', default='/data/datasets/chest_xray/MIMIC-CXR/mimic-cxr-jpg-2.0.0.physionet.org')
-    parser.add_argument('--model_name', default='train05')
+    parser.add_argument('--model_name', default='train2')
     parser.add_argument('--model_params', default='model/hparams.json')
     parser.add_argument('--batch_size', default=1)
     parser.add_argument('--seed', default=42)
     parser.add_argument('--debug_level', default='3')
-    parser.add_argument('--gpu', help='comma separated list of GPU(s) to use.', default='0')
+    parser.add_argument('--gpu', help='comma separated list of GPU(s) to use.', default='')
     args = parser.parse_args()
 
     # 0 = all messages are logged (default behavior)
@@ -153,8 +145,7 @@ if __name__ == '__main__':
     # ISSUE: https://github.com/tensorflow/tensorflow/issues/31870
     import tensorflow as tf
     from datasets.mimic import get_mimic_dataset
-    from model.transformer import Transformer, default_hparams
-    from model.utils import create_target_masks
+    from model.baseline import CNN_Encoder, RNN_Decoder, default_hparams
 
     # Set Tensorflow 2.0 logging level
     error_level = {'0': 'DEBUG', '1': 'INFO', '2': 'WARN', '3': 'ERROR'}

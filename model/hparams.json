@@ -2,8 +2,8 @@
   "img_x": 224,
   "img_y": 224,
   "img_ch": 1,
-  "d_model": 512,
-  "dff": 2048,
+  "d_model": 256,
+  "dff": 512,
   "n_head": 8,
   "n_layer": 6,
   "dropout_rate": 0.2
