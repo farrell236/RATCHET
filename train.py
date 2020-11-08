@@ -34,13 +34,15 @@ def main(args, hparams):
             learning_rate=learning_rate, beta_1=0.9, beta_2=0.98, epsilon=1e-9)
 
         # Create TF Sparse Categorical Crossentropy Loss Object
-        loss_object = tf.keras.losses.SparseCategoricalCrossentropy(
+        loss_object_text = tf.keras.losses.SparseCategoricalCrossentropy(
+            from_logits=True, reduction='none')
+        loss_object_label = tf.keras.losses.BinaryCrossentropy(
             from_logits=True, reduction='none')
 
         # Loss Function
         def loss_function(real, pred):
             mask = tf.math.logical_not(tf.math.equal(real, 0))
-            loss_ = loss_object(real, pred)
+            loss_ = loss_object_text(real, pred)
 
             mask = tf.cast(mask, dtype=loss_.dtype)
             loss_ *= mask
@@ -55,7 +57,7 @@ def main(args, hparams):
         # Define Model
         target_vocab_size = tokenizer.get_vocab_size()
         encoder = CNN_Encoder(hparams['d_model'], input_shape=(hparams['img_x'], hparams['img_y'], hparams['img_ch']))
-        decoder = RNN_Decoder(hparams['d_model'], hparams['dff'], target_vocab_size)
+        decoder = TieNet_Decoder(hparams['d_model'], hparams['dff'], target_vocab_size)
 
         # Model Checkpointing
         ckpt = tf.train.Checkpoint(encoder=encoder,
@@ -76,7 +78,7 @@ def main(args, hparams):
                 print(f'{datetime.datetime.now()}: [*] Checkpoint not found. Skipping.')
 
 
-    def train_step(img_tensor, target):
+    def train_step(img_tensor, target, label):
 
         loss = 0
 
@@ -86,27 +88,54 @@ def main(args, hparams):
 
         dec_input = tf.expand_dims([tokenizer.token_to_id('<s>')] * target.shape[0], 1)
 
+        at = []
+        H = []
+
         with tf.GradientTape() as tape:
             features = encoder(img_tensor)
 
             for i in range(1, target.shape[1]):
                 # passing the features through the decoder
-                predictions, hidden, _ = decoder(dec_input, features, hidden)
+                predictions, hidden, attention_weights = decoder(dec_input, features, hidden)
 
                 loss += loss_function(target[:, i], predictions)
 
                 # using teacher forcing
                 dec_input = tf.expand_dims(target[:, i], 1)
 
+                H.append(hidden)
+                at.append(attention_weights[..., 0])
+
+            H = tf.stack(H, axis=-1)
+            at = tf.stack(at, axis=-1)
+
+            G = tf.nn.softmax(tf.matmul(decoder.W2, tf.tanh(tf.matmul(decoder.W1, H))))
+            M = tf.matmul(G, H, transpose_b=True)
+
+            X_AETE = tf.reduce_max(M, axis=1)
+
+            g = tf.reduce_max(G, axis=1, keepdims=True)
+            aw_s = tf.reduce_sum(at * g, axis=-1, keepdims=True)
+            X_SW_GAP = tf.reduce_sum(features * aw_s, axis=1)
+
+            joint_learning = tf.concat((X_AETE, X_SW_GAP), axis=-1)
+
+            class_pred = decoder.fc2_label(decoder.fc1_label(joint_learning))
+            class_loss = tf.reduce_sum(
+                loss_object_label(y_true=label, y_pred=class_pred))
+
+            alpha = 0.85
+            total_loss = (1. - alpha) * (loss / int(target.shape[1])) + alpha * class_loss
+
         trainable_variables = encoder.trainable_variables + decoder.trainable_variables
-        gradients = tape.gradient(loss, trainable_variables)
+        gradients = tape.gradient(total_loss, trainable_variables)
         optimizer.apply_gradients(zip(gradients, trainable_variables))
 
-        train_loss(loss/int(target.shape[1]))
+        train_loss(total_loss)
 
     @tf.function()
-    def distributed_train_step(inp, tar):
-        strategy.run(train_step, args=(inp, tar))
+    def distributed_train_step(inp, tar, lbl):
+        strategy.run(train_step, args=(inp, tar, lbl))
 
     print(f'{datetime.datetime.now()}:', '='*20, 'BEGIN TRAINING', '='*20)
     for epoch in range(init_epoch, init_epoch + args.n_epochs):
@@ -116,13 +145,13 @@ def main(args, hparams):
 
         # Reset Loss and Accuracy Metrics
         train_loss.reset_states()
-        # train_accuracy.reset_states()
+        train_accuracy.reset_states()
 
         # Main Train Step
         t = tqdm.tqdm(enumerate(train_dist_dataset), total=len(train_dataset))
         t_start = datetime.datetime.now()
-        for (batch, (inp, tar)) in t:
-            distributed_train_step(inp, tar)
+        for (batch, (inp, tar, lbl)) in t:
+            distributed_train_step(inp, tar, lbl)
             t.set_description(f'{t_start}: Loss {train_loss.result():.4f} Accuracy {train_accuracy.result():.4f}')
 
         # Save Checkpoint
@@ -145,7 +174,7 @@ if __name__ == '__main__':
     parser.add_argument('--csv_root', default='preprocessing/mimic')
     parser.add_argument('--vocab_root', default='preprocessing/mimic')
     parser.add_argument('--mimic_root', default='/data/datasets/chest_xray/MIMIC-CXR/mimic-cxr-jpg-2.0.0.physionet.org')
-    parser.add_argument('--model_name', default='train2')
+    parser.add_argument('--model_name', default='train31')
     parser.add_argument('--model_params', default='model/hparams.json')
     parser.add_argument('--n_epochs', default=20)
     parser.add_argument('--init_lr', default=1e-4)
@@ -175,7 +204,7 @@ if __name__ == '__main__':
     # ISSUE: https://github.com/tensorflow/tensorflow/issues/31870
     import tensorflow as tf
     from datasets.mimic import get_mimic_dataset
-    from model.baseline import CNN_Encoder, RNN_Decoder, default_hparams
+    from model.baseline import CNN_Encoder, TieNet_Decoder, default_hparams
     from model.lr_scheduler import CustomSchedule
 
     gpus = tf.config.experimental.list_physical_devices('GPU')
