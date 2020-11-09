@@ -132,7 +132,6 @@ def main(args, hparams):
         result, class_pred, attention_plot = evaluate(inp, encoder, decoder, tokenizer)
         pred_txt[idx] = tokenizer.decode(result)
         pred_lbl.append(tf.nn.sigmoid(class_pred)[0])
-        if idx==10: break
 
     pred_txt_df = pd.DataFrame.from_dict(pred_txt, orient='index')
     true_txt_df = pd.DataFrame.from_dict(true_txt, orient='index')
