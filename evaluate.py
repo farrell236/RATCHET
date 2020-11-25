@@ -49,7 +49,7 @@ def evaluate(inp_img, transformer, tokenizer, max_length=128):
     # The first token to the transformer should be the start token
     output = tf.convert_to_tensor([[tokenizer.token_to_id('<s>')]])
 
-    for _ in tqdm.tqdm(range(max_length)):
+    for _ in range(max_length):
         combined_mask = create_target_masks(output)
 
         # predictions.shape == (batch_size, seq_len, vocab_size)
@@ -106,33 +106,33 @@ def main(args, hparams):
 
 
     #################### Run inference ####################
-    test_dataset_iterator = test_dataset.as_numpy_iterator()
 
-    for i in range(32):
-        batch = test_dataset_iterator.next()
+    pred_captions = []
 
-        true_img = batch[0]
-        true_txt = tokenizer.decode(numpy.trim_zeros(batch[1][0], 'b'))
+    t = tqdm.tqdm(enumerate(test_dataset), total=len(test_dataset))
+    for (idx, (inp, tar, id)) in t:
+        result, attention_weights = evaluate(inp, transformer=transformer, tokenizer=tokenizer)
+        pred_captions.append({
+            'image_id': int(id.numpy()[0]),
+            'caption': tokenizer.decode(result)
+        })
 
-        result, attention_weights = evaluate(true_img, transformer=transformer, tokenizer=tokenizer)
-        predicted_sentence = tokenizer.decode(result)
+    with open('predictions.json', 'w') as f:
+        json.dump(pred_captions, f)
 
-        print('-'*10, f' Sample[{i}] ', '-'*10)
-        print('Predicted Text:', predicted_sentence)
-        print('True Text:', true_txt)
-
+    a=1
 
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--vocab_root', default='preprocessing/mscoco')
     parser.add_argument('--data_root', default='/data/datasets/MS-COCO/2017/')
-    parser.add_argument('--model_name', default='coco_train0')
+    parser.add_argument('--model_name', default='coco_train0a')
     parser.add_argument('--model_params', default='model/hparams.json')
     parser.add_argument('--batch_size', default=1)
     parser.add_argument('--seed', default=42)
     parser.add_argument('--debug_level', default='3')
-    parser.add_argument('--gpu', help='comma separated list of GPU(s) to use.', default='')
+    parser.add_argument('--gpu', help='comma separated list of GPU(s) to use.', default='0')
     args = parser.parse_args()
 
     # 0 = all messages are logged (default behavior)

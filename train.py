@@ -110,7 +110,7 @@ def main(args, hparams):
         # Main Train Step
         t = tqdm.tqdm(enumerate(train_dist_dataset), total=len(train_dataset))
         t_start = datetime.datetime.now()
-        for (batch, (inp, tar)) in t:
+        for (batch, (inp, tar, _)) in t:
             distributed_train_step(inp, tar)
             t.set_description(f'{t_start}: Loss {train_loss.result():.4f} Accuracy {train_accuracy.result():.4f}')
 
@@ -133,10 +133,10 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--vocab_root', default='preprocessing/mscoco')
     parser.add_argument('--data_root', default='/data/datasets/MS-COCO/2017/')
-    parser.add_argument('--model_name', default='coco_train0')
+    parser.add_argument('--model_name', default='coco_train0a')
     parser.add_argument('--model_params', default='model/hparams.json')
     parser.add_argument('--n_epochs', default=20)
-    parser.add_argument('--init_lr', default=1e-4)
+    parser.add_argument('--init_lr', default=None)
     parser.add_argument('--batch_size', default=16)
     parser.add_argument('--resume', default=True)
     parser.add_argument('--seed', default=42)

@@ -12,7 +12,7 @@ import tensorflow as tf
 from tokenizers import ByteLevelBPETokenizer
 
 
-def parse_function(filename, text):
+def parse_function(filename, text, image_id):
     # Read entire contents of image
     image_string = tf.io.read_file(filename)
 
@@ -25,10 +25,10 @@ def parse_function(filename, text):
     # Resize image with padding to 244x244
     image = tf.image.resize_with_pad(image, 224, 224, method=tf.image.ResizeMethod.BILINEAR)
 
-    return image, text
+    return image, text, image_id
 
 
-def augmentation_fn(image, text):
+def augmentation_fn(image, text, image_id):
     # Random left-right flip the image
     image = tf.image.random_flip_left_right(image)
 
@@ -41,7 +41,7 @@ def augmentation_fn(image, text):
     # Make sure the image is still in [0, 1]
     image = tf.clip_by_value(image, 0.0, 1.0)
 
-    return image, text
+    return image, text, image_id
 
 
 def _gaussian_kernel(kernel_size, sigma, n_channels, dtype):
@@ -80,15 +80,18 @@ def get_mscoco_dataset(coco_root,
 
     # Store captions and image names in vectors
     all_captions = []
+    all_image_ids = []
     all_img_name_vector = []
 
     for annot in tqdm.tqdm(annotations['annotations']):
         caption = annot['caption']
         image_id = annot['image_id']
+        if mode == 'val' and image_id in all_image_ids: continue
         full_coco_image_path = os.path.join(coco_root, f'{mode}2017', f'{image_id:012d}.jpg')
 
         all_img_name_vector.append(full_coco_image_path)
         all_captions.append(caption)
+        all_image_ids.append(image_id)
 
     # Tokenize reports
     texts_tokenized = tokenizer.encode_batch(all_captions)
@@ -100,7 +103,7 @@ def get_mscoco_dataset(coco_root,
         texts_tokenized, maxlen=max_length, dtype='int32', padding='post', truncating='post')
 
     # Create Tensorflow dataset (image, text) pair
-    dataset = tf.data.Dataset.from_tensor_slices((all_img_name_vector, texts_tokenized))
+    dataset = tf.data.Dataset.from_tensor_slices((all_img_name_vector, texts_tokenized, all_image_ids))
     if mode == 'train':
         dataset = dataset.shuffle(len(dataset) if buffer_size == None else buffer_size)
     dataset = dataset.map(parse_function, num_parallel_calls=n_threads)
