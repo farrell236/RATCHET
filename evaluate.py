@@ -76,8 +76,8 @@ def evaluate(image, encoder, decoder, tokenizer, max_length=128):
 def main(args, hparams):
 
     # Get test dataset
-    test_dataset, tokenizer = get_mimic_dataset(args.csv_root, args.vocab_root, args.mimic_root,
-                                                batch_size=args.batch_size, mode='test')
+    test_dataset, tokenizer = get_mscoco_dataset(args.data_root, args.vocab_root,
+                                                  batch_size=args.batch_size, mode='val')
 
     # Define model
     target_vocab_size = tokenizer.get_vocab_size()
@@ -99,29 +99,28 @@ def main(args, hparams):
 
 
     #################### Run inference ####################
-    pred_txt = dict()
-    true_txt = dict()
+
+    pred_captions = []
 
     t = tqdm.tqdm(enumerate(test_dataset), total=len(test_dataset))
-    for (idx, (inp, tar)) in t:
-        true_txt[idx] = tokenizer.decode(np.trim_zeros(tar[0].numpy(), 'b')[1:-1])
-        result, attention_plot = evaluate(inp, encoder, decoder, tokenizer)
-        pred_txt[idx] = tokenizer.decode(result)
+    for (idx, (inp, tar, id)) in t:
+        result, attention_weights = evaluate(inp, encoder, decoder, tokenizer)
+        pred_captions.append({
+            'image_id': int(id.numpy()[0]),
+            'caption': tokenizer.decode(result)
+        })
 
-    pred_txt_df = pd.DataFrame.from_dict(pred_txt, orient='index')
-    true_txt_df = pd.DataFrame.from_dict(true_txt, orient='index')
+    with open('predictions.json', 'w') as f:
+        json.dump(pred_captions, f)
 
-    pred_txt_df.to_csv('/tmp/all_pred.csv', index=False, header=False)
-    true_txt_df.to_csv('/tmp/all_true.csv', index=False, header=False)
-
+    a=1
 
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--csv_root', default='preprocessing/mimic')
-    parser.add_argument('--vocab_root', default='preprocessing/mimic')
-    parser.add_argument('--mimic_root', default='/data/datasets/chest_xray/MIMIC-CXR/mimic-cxr-jpg-2.0.0.physionet.org')
-    parser.add_argument('--model_name', default='train2')
+    parser.add_argument('--vocab_root', default='preprocessing/mscoco')
+    parser.add_argument('--data_root', default='/data/datasets/MS-COCO/2017/')
+    parser.add_argument('--model_name', default='coco_train1b')
     parser.add_argument('--model_params', default='model/hparams.json')
     parser.add_argument('--batch_size', default=1)
     parser.add_argument('--seed', default=42)
@@ -144,7 +143,7 @@ if __name__ == '__main__':
     # Import Tensorflow AFTER setting environment variables
     # ISSUE: https://github.com/tensorflow/tensorflow/issues/31870
     import tensorflow as tf
-    from datasets.mimic import get_mimic_dataset
+    from datasets.mscoco import get_mscoco_dataset
     from model.baseline import CNN_Encoder, RNN_Decoder, default_hparams
 
     # Set Tensorflow 2.0 logging level

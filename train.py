@@ -15,8 +15,7 @@ def main(args, hparams):
     # Load dataset
     BATCH_SIZE_PER_REPLICA = args.batch_size
     GLOBAL_BATCH_SIZE = BATCH_SIZE_PER_REPLICA * strategy.num_replicas_in_sync
-    train_dataset, tokenizer = get_mimic_dataset(args.csv_root, args.vocab_root, args.mimic_root,
-                                                 batch_size=GLOBAL_BATCH_SIZE)
+    train_dataset, tokenizer = get_mscoco_dataset(args.data_root, args.vocab_root, batch_size=GLOBAL_BATCH_SIZE)
     train_dist_dataset = strategy.experimental_distribute_dataset(train_dataset)
 
     # Define computational graph in a Strategy wrapper
@@ -121,7 +120,7 @@ def main(args, hparams):
         # Main Train Step
         t = tqdm.tqdm(enumerate(train_dist_dataset), total=len(train_dataset))
         t_start = datetime.datetime.now()
-        for (batch, (inp, tar)) in t:
+        for (batch, (inp, tar, _)) in t:
             distributed_train_step(inp, tar)
             t.set_description(f'{t_start}: Loss {train_loss.result():.4f} Accuracy {train_accuracy.result():.4f}')
 
@@ -142,13 +141,12 @@ def main(args, hparams):
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--csv_root', default='preprocessing/mimic')
-    parser.add_argument('--vocab_root', default='preprocessing/mimic')
-    parser.add_argument('--mimic_root', default='/data/datasets/chest_xray/MIMIC-CXR/mimic-cxr-jpg-2.0.0.physionet.org')
-    parser.add_argument('--model_name', default='train2')
+    parser.add_argument('--vocab_root', default='preprocessing/mscoco')
+    parser.add_argument('--data_root', default='/data/datasets/MS-COCO/2017/')
+    parser.add_argument('--model_name', default='coco_train1b')
     parser.add_argument('--model_params', default='model/hparams.json')
     parser.add_argument('--n_epochs', default=20)
-    parser.add_argument('--init_lr', default=1e-4)
+    parser.add_argument('--init_lr', default=None)
     parser.add_argument('--batch_size', default=16)
     parser.add_argument('--resume', default=True)
     parser.add_argument('--seed', default=42)
@@ -174,7 +172,7 @@ if __name__ == '__main__':
     # Import Tensorflow AFTER setting environment variables
     # ISSUE: https://github.com/tensorflow/tensorflow/issues/31870
     import tensorflow as tf
-    from datasets.mimic import get_mimic_dataset
+    from datasets.mscoco import get_mscoco_dataset
     from model.baseline import CNN_Encoder, RNN_Decoder, default_hparams
     from model.lr_scheduler import CustomSchedule
 

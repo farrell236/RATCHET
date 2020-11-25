@@ -1,7 +1,7 @@
 {
   "img_x": 224,
   "img_y": 224,
-  "img_ch": 1,
+  "img_ch": 3,
   "d_model": 256,
   "dff": 512,
   "n_head": 8,
