@@ -3,24 +3,12 @@ from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
 
-import datetime
+import torch
+import torchvision
 
-import tensorflow as tf
+import numpy as np
 
 from .utils import positional_encoding
-
-
-def default_hparams():
-    return {
-        'img_x': 224,
-        'img_y': 224,
-        'img_ch': 1,
-        'd_model': 512,
-        'dff': 2048,
-        'n_head': 8,
-        'n_layer': 6,
-        'dropout_rate': 0.1
-    }
 
 
 def scaled_dot_product_attention(q, k, v, mask):
@@ -41,11 +29,11 @@ def scaled_dot_product_attention(q, k, v, mask):
       output, attention_weights
     """
 
-    matmul_qk = tf.matmul(q, k, transpose_b=True)  # (..., seq_len_q, seq_len_k)
+    matmul_qk = torch.matmul(q, k.transpose(-2, -1))  # (..., seq_len_q, seq_len_k)
 
     # scale matmul_qk
-    dk = tf.cast(tf.shape(k)[-1], tf.float32)
-    scaled_attention_logits = matmul_qk / tf.math.sqrt(dk)
+    dk = float(k.shape[-1])
+    scaled_attention_logits = matmul_qk / dk ** 0.5
 
     # add the mask to the scaled tensor.
     if mask is not None:
@@ -53,15 +41,23 @@ def scaled_dot_product_attention(q, k, v, mask):
 
     # softmax is normalized on the last axis (seq_len_k) so that the scores
     # add up to 1.
-    attention_weights = tf.nn.softmax(scaled_attention_logits, axis=-1)  # (..., seq_len_q, seq_len_k)
+    attention_weights = torch.softmax(scaled_attention_logits, dim=-1)  # (..., seq_len_q, seq_len_k)
 
-    output = tf.matmul(attention_weights, v)  # (..., seq_len_q, depth_v)
+    output = torch.matmul(attention_weights, v)  # (..., seq_len_q, depth_v)
 
     return output, attention_weights
 
 
-class MultiHeadAttention(tf.keras.layers.Layer):
-    def __init__(self, d_model, num_heads):
+def point_wise_feed_forward_network(d_model, dff):
+    return torch.nn.Sequential(
+        torch.nn.Linear(in_features=d_model, out_features=dff),
+        torch.nn.LeakyReLU(negative_slope=0.2),
+        torch.nn.Linear(in_features=dff, out_features=d_model)
+    )
+
+
+class MultiHeadAttention(torch.nn.Module):
+    def __init__(self, d_model, num_heads, device=torch.device('cpu')):
         super(MultiHeadAttention, self).__init__()
 
         assert d_model % num_heads == 0
@@ -71,21 +67,21 @@ class MultiHeadAttention(tf.keras.layers.Layer):
 
         self.depth = self.d_model // self.num_heads
 
-        self.wq = tf.keras.layers.Dense(d_model)
-        self.wk = tf.keras.layers.Dense(d_model)
-        self.wv = tf.keras.layers.Dense(d_model)
+        self.wq = torch.nn.Linear(d_model, d_model).to(device=device)
+        self.wk = torch.nn.Linear(d_model, d_model).to(device=device)
+        self.wv = torch.nn.Linear(d_model, d_model).to(device=device)
 
-        self.dense = tf.keras.layers.Dense(d_model)
+        self.dense = torch.nn.Linear(d_model, d_model).to(device=device)
 
     def split_heads(self, x, batch_size):
         """Split the last dimension into (num_heads, depth).
         Transpose the result such that the shape is (batch_size, num_heads, seq_len, depth)
         """
-        x = tf.reshape(x, (batch_size, -1, self.num_heads, self.depth))
-        return tf.transpose(x, perm=[0, 2, 1, 3])
+        x = torch.reshape(x, (batch_size, -1, self.num_heads, self.depth))
+        return x.permute(dims=[0, 2, 1, 3])
 
-    def call(self, v, k, q, mask):
-        batch_size = tf.shape(q)[0]
+    def forward(self, v, k, q, mask):
+        batch_size = q.shape[0]
 
         q = self.wq(q)  # (batch_size, seq_len, d_model)
         k = self.wk(k)  # (batch_size, seq_len, d_model)
@@ -100,139 +96,96 @@ class MultiHeadAttention(tf.keras.layers.Layer):
         scaled_attention, attention_weights = \
             scaled_dot_product_attention(q, k, v, mask)
 
-        scaled_attention = tf.transpose(scaled_attention,
-                                        perm=[0, 2, 1, 3])  # (batch_size, seq_len_q, num_heads, depth)
+        scaled_attention = scaled_attention.permute(dims=[0, 2, 1, 3])  # (batch_size, seq_len_q, num_heads, depth)
 
-        concat_attention = tf.reshape(scaled_attention,
-                                      (batch_size, -1, self.d_model))  # (batch_size, seq_len_q, d_model)
+        concat_attention = torch.reshape(scaled_attention,
+                                         (batch_size, -1, self.d_model))  # (batch_size, seq_len_q, d_model)
 
         output = self.dense(concat_attention)  # (batch_size, seq_len_q, d_model)
 
         return output, attention_weights
 
 
-def point_wise_feed_forward_network(d_model, dff):
-    return tf.keras.Sequential([
-        tf.keras.layers.Dense(dff, activation='relu'),  # (batch_size, seq_len, dff)
-        tf.keras.layers.Dense(d_model)  # (batch_size, seq_len, d_model)
-    ])
-
-
-class EncoderLayer(tf.keras.layers.Layer):
-    def __init__(self, d_model, num_heads, dff, rate=0.1):
-        super(EncoderLayer, self).__init__()
-
-        self.mha = MultiHeadAttention(d_model, num_heads)
-        self.ffn = point_wise_feed_forward_network(d_model, dff)
-
-        self.layernorm1 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
-        self.layernorm2 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
-
-        self.dropout1 = tf.keras.layers.Dropout(rate)
-        self.dropout2 = tf.keras.layers.Dropout(rate)
-
-    def call(self, x, training, mask):
-        attn_output, _ = self.mha(x, x, x, mask)  # (batch_size, input_seq_len, d_model)
-        attn_output = self.dropout1(attn_output, training=training)
-        out1 = self.layernorm1(x + attn_output)  # (batch_size, input_seq_len, d_model)
-
-        ffn_output = self.ffn(out1)  # (batch_size, input_seq_len, d_model)
-        ffn_output = self.dropout2(ffn_output, training=training)
-        out2 = self.layernorm2(out1 + ffn_output)  # (batch_size, input_seq_len, d_model)
-
-        return out2
-
-
-class DecoderLayer(tf.keras.layers.Layer):
-    def __init__(self, d_model, num_heads, dff, rate=0.1):
+class DecoderLayer(torch.nn.Module):
+    def __init__(self, d_model, num_heads, dff, rate=0.1, device=torch.device('cpu')):
         super(DecoderLayer, self).__init__()
 
-        self.mha1 = MultiHeadAttention(d_model, num_heads)
-        self.mha2 = MultiHeadAttention(d_model, num_heads)
+        self.mha1 = MultiHeadAttention(d_model, num_heads, device=device)
+        self.mha2 = MultiHeadAttention(d_model, num_heads, device=device)
 
-        self.ffn = point_wise_feed_forward_network(d_model, dff)
+        self.ffn = point_wise_feed_forward_network(d_model, dff).to(device=device)
 
-        self.layernorm1 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
-        self.layernorm2 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
-        self.layernorm3 = tf.keras.layers.LayerNormalization(epsilon=1e-6)
+        self.layernorm1 = torch.nn.LayerNorm(d_model).to(device=device)
+        self.layernorm2 = torch.nn.LayerNorm(d_model).to(device=device)
+        self.layernorm3 = torch.nn.LayerNorm(d_model).to(device=device)
 
-        self.dropout1 = tf.keras.layers.Dropout(rate)
-        self.dropout2 = tf.keras.layers.Dropout(rate)
-        self.dropout3 = tf.keras.layers.Dropout(rate)
+        self.dropout1 = torch.nn.Dropout(rate)
+        self.dropout2 = torch.nn.Dropout(rate)
+        self.dropout3 = torch.nn.Dropout(rate)
 
-    def call(self, x, enc_output, training,
-             look_ahead_mask, padding_mask):
+    def forward(self, x, enc_output, training, look_ahead_mask, padding_mask):
         # enc_output.shape == (batch_size, input_seq_len, d_model)
 
         attn1, attn_weights_block1 = self.mha1(x, x, x, look_ahead_mask)  # (batch_size, target_seq_len, d_model)
-        attn1 = self.dropout1(attn1, training=training)
+        attn1 = self.dropout1(attn1)
         out1 = self.layernorm1(attn1 + x)
 
         attn2, attn_weights_block2 = self.mha2(
             enc_output, enc_output, out1, padding_mask)  # (batch_size, target_seq_len, d_model)
-        attn2 = self.dropout2(attn2, training=training)
+        attn2 = self.dropout2(attn2)
         out2 = self.layernorm2(attn2 + out1)  # (batch_size, target_seq_len, d_model)
 
         ffn_output = self.ffn(out2)  # (batch_size, target_seq_len, d_model)
-        ffn_output = self.dropout3(ffn_output, training=training)
+        ffn_output = self.dropout3(ffn_output)
         out3 = self.layernorm3(ffn_output + out2)  # (batch_size, target_seq_len, d_model)
 
         return out3, attn_weights_block1, attn_weights_block2
 
 
-class Encoder(tf.keras.layers.Layer):
-    def __init__(self, embedding_dim, input_shape, pretrain_weights=None):
+class Encoder(torch.nn.Module):
+    def __init__(self, embedding_dim, device=torch.device('cpu')):
         super(Encoder, self).__init__()
 
-        # shape after fc == (batch_size, nf * nf, embedding_dim)
-        self.fc = tf.keras.layers.Dense(embedding_dim, activation='relu')
-
         # Use DenseNet-121 as feature extraction model
-        self.base_model = tf.keras.applications.DenseNet121(
-            include_top=False, weights=None, input_shape=input_shape)
+        self.base_model = torchvision.models.densenet121().to(device=device)
+        self.base_model = torch.nn.Sequential(*(list(self.base_model.children())[:-1]))
 
-        # Load pre-trained weights if present
-        if pretrain_weights:
-            print(f'{datetime.datetime.now()}: [*] Loading Pretrained DenseNet-121 weights: {pretrain_weights}')
-            self.base_model.load_weights(pretrain_weights)
-        else:
-            print(f'{datetime.datetime.now()}: [*] No Pretrained DenseNet-121 weights specified')
+        # shape after fc == (batch_size, nf * nf, embedding_dim)
+        self.fc = torch.nn.Linear(in_features=1024, out_features=embedding_dim).to(device=device)
 
-    def call(self, x, **kwargs):
+    def forward(self, x):
         x = self.base_model(x)
-        # DenseNet-121 output is (batch_size, ?, ?, 1024)
-        s = tf.shape(x)
-        x = tf.reshape(x, (s[0], s[1] * s[2], x.shape[3]))
+        # DenseNet-121 output is (batch_size, 1024, ?, ?)
+        x = x.view(x.size(0), x.size(1), -1)
+        x = x.permute(0, 2, 1)
         x = self.fc(x)
-        return x
+        return x  # (batch_size, input_seq_len, d_model)
 
 
-
-class Decoder(tf.keras.layers.Layer):
+class Decoder(torch.nn.Module):
     def __init__(self, num_layers, d_model, num_heads, dff, target_vocab_size,
-                 maximum_position_encoding, rate=0.1):
+                 maximum_position_encoding, rate=0.1, device=torch.device('cpu')):
         super(Decoder, self).__init__()
 
         self.d_model = d_model
         self.num_layers = num_layers
 
-        self.embedding = tf.keras.layers.Embedding(target_vocab_size, d_model)
-        self.pos_encoding = positional_encoding(maximum_position_encoding, d_model)
+        self.embedding = torch.nn.Embedding(target_vocab_size, d_model).to(device=device)
+        self.pos_encoding = positional_encoding(maximum_position_encoding,
+                                                self.d_model).to(device=device)
 
-        self.dec_layers = [DecoderLayer(d_model, num_heads, dff, rate)
+        self.dec_layers = [DecoderLayer(d_model, num_heads, dff, rate, device)
                            for _ in range(num_layers)]
-        self.dropout = tf.keras.layers.Dropout(rate)
+        self.dropout = torch.nn.Dropout(rate)
 
-    def call(self, x, enc_output, training,
-             look_ahead_mask, padding_mask):
-        seq_len = tf.shape(x)[1]
+    def forward(self, x, enc_output, training, look_ahead_mask, padding_mask):
+        seq_len = x.shape[1]
         attention_weights = {}
 
         x = self.embedding(x)  # (batch_size, target_seq_len, d_model)
-        x *= tf.math.sqrt(tf.cast(self.d_model, tf.float32))
-        x += self.pos_encoding[:, :seq_len, :]
-
-        x = self.dropout(x, training=training)
+        x *= self.d_model ** 0.5
+        x += torch.as_tensor(self.pos_encoding[:, :seq_len, :], device=x.device)
+        x = self.dropout(x)
 
         for i in range(self.num_layers):
             x, block1, block2 = self.dec_layers[i](x, enc_output, training,
@@ -245,24 +198,20 @@ class Decoder(tf.keras.layers.Layer):
         return x, attention_weights
 
 
-class Transformer(tf.keras.Model):
+class Transformer(torch.nn.Module):
     def __init__(self, num_layers, d_model, num_heads, dff,
-                 target_vocab_size, rate=0.1, input_shape=(224, 224, 1),
-                 classifier_weights=None):
+                 target_vocab_size, rate=0.1, device=torch.device('cpu')):
         super(Transformer, self).__init__()
 
-        # self.encoder = Encoder(num_layers, d_model, num_heads, dff,
-        #                        input_vocab_size, pe_input, rate)
-        self.encoder = Encoder(d_model, input_shape,
-                               pretrain_weights=classifier_weights)
+        self.encoder = Encoder(d_model, device)
 
         self.decoder = Decoder(num_layers, d_model, num_heads, dff,
-                               target_vocab_size, target_vocab_size, rate)
+                               target_vocab_size, target_vocab_size, rate, device)
 
-        self.final_layer = tf.keras.layers.Dense(target_vocab_size)
+        self.final_layer = torch.nn.Linear(d_model, target_vocab_size).to(device=device)
 
-    def call(self, inp, tar, training,
-             look_ahead_mask, dec_padding_mask):
+    def forward(self, inp, tar, training, look_ahead_mask, dec_padding_mask):
+
         enc_output = self.encoder(inp)  # (batch_size, inp_seq_len, d_model)
 
         # dec_output.shape == (batch_size, tar_seq_len, d_model)
@@ -272,3 +221,28 @@ class Transformer(tf.keras.Model):
         final_output = self.final_layer(dec_output)  # (batch_size, tar_seq_len, target_vocab_size)
 
         return final_output, attention_weights
+
+
+# if __name__ == '__main__':
+#
+#     a=1
+#
+#     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+#     # dev = 'cuda' if torch.cuda.is_available() else 'cpu'
+#
+#     sample_transformer = Transformer(
+#         num_layers=2, d_model=512, num_heads=8, dff=2048,
+#         target_vocab_size=8000, device=device)
+#
+#     temp_input = torch.from_numpy(np.random.rand(10, 3, 224, 224).astype('float32')).to('cuda')
+#     temp_target = torch.from_numpy(np.random.randint(low=0, high=200, size=(10, 36), dtype='int64')).to(device=device)
+#
+#     fn_out, _ = sample_transformer(temp_input, temp_target,
+#                                    training=True,
+#                                    look_ahead_mask=None,
+#                                    dec_padding_mask=None)
+#
+#     fn_out.shape  # (batch_size, tar_seq_len, target_vocab_size)
+#
+#
+#     a=1

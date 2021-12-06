@@ -1,57 +1,60 @@
-import argparse
-import datetime
-import json
 import os
+
+os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'  # see issue #152
+os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+
+import torch
 import tqdm
 
 import numpy as np
 import pandas as pd
 
-def top_k_logits(logits, k):
-    if k == 0:
-        # no truncation
-        return logits
+from datasets.mimic import CustomImageDataset
+from model.transformer import Transformer
+from model.utils import create_target_masks
 
-    def _top_k():
-        values, _ = tf.nn.top_k(logits, k=k)
-        min_values = values[:, -1, tf.newaxis]
-        return tf.where(
-            logits < min_values,
-            tf.ones_like(logits, dtype=logits.dtype) * -1e10,
-            logits,
-        )
-    return tf.cond(
-       tf.equal(k, 0),
-       lambda: logits,
-       lambda: _top_k(),
-    )
+from tokenizers import ByteLevelBPETokenizer
 
 
-def top_p_logits(logits, p):
-    """Nucleus sampling"""
-    batch, _ = logits.shape.as_list()
-    sorted_logits = tf.sort(logits, direction='DESCENDING', axis=-1)
-    cumulative_probs = tf.cumsum(tf.nn.softmax(sorted_logits, axis=-1), axis=-1)
-    indices = tf.stack([
-        tf.range(0, batch),
-        # number of indices to include
-        tf.maximum(tf.reduce_sum(tf.cast(cumulative_probs <= p, tf.int32), axis=-1) - 1, 0),
-    ], axis=-1)
-    min_values = tf.gather_nd(sorted_logits, indices)
-    return tf.where(
-        logits < min_values,
-        tf.ones_like(logits) * -1e10,
-        logits,
-    )
+'''
+STEP 1: LOAD DATASET
+'''
+csv_root = 'datasets'
+img_dir = '/data/datasets/chest_xray/MIMIC-CXR/mimic-cxr-jpg-2.0.0.physionet.org'
+
+# Parameters
+params = {'batch_size': 1,
+          'shuffle': False,
+          'num_workers': 1}
+max_epochs = 100
+
+# Generators
+test_set = CustomImageDataset(csv_root, img_dir, mode='test')
+test_generator = torch.utils.data.DataLoader(test_set, **params)
+
+tokenizer = ByteLevelBPETokenizer(
+    os.path.join(csv_root, 'mimic-vocab.json'),
+    os.path.join(csv_root, 'mimic-merges.txt'),
+)
 
 
-def evaluate(inp_img, transformer, tokenizer, max_length=128):
+'''
+STEP 4: INSTANTIATE MODEL
+'''
+transformer = torch.load('transformer_model.pt').to('cuda')
+transformer.eval()
+
+# def create_target_masks(seq):
+#     return torch.eq(seq, 0).type(torch.float32)
+
+def evaluate(inp_img, max_length=128):
 
     # The first token to the transformer should be the start token
-    output = tf.convert_to_tensor([[tokenizer.token_to_id('<s>')]])
+    output = torch.from_numpy(np.array([[tokenizer.token_to_id('<s>')]], dtype=np.int32)).to('cuda')
+    inp_img = torch.cat(3 * [inp_img], dim=1).to('cuda')
 
-    for _ in tqdm.tqdm(range(max_length)):
-        combined_mask = create_target_masks(output)
+    for i in range(max_length):
+        combined_mask = create_target_masks(output).to('cuda')
 
         # predictions.shape == (batch_size, seq_len, vocab_size)
         predictions, attention_weights = transformer(inp_img,
@@ -61,117 +64,38 @@ def evaluate(inp_img, transformer, tokenizer, max_length=128):
                                                      None)
 
         # select the last word from the seq_len dimension
-        predictions = predictions[:, -1, :]  # (batch_size, vocab_size)
-        # predictions = top_k_logits(predictions, k=6)
-        # predictions = top_p_logits(predictions, p=0.5)
+        predictions = predictions[:, -1:, :]  # (batch_size, 1, vocab_size)
 
-        predicted_id = tf.cast(tf.argmax(predictions, axis=-1), tf.int32)[:, tf.newaxis]
-        # predicted_id = tf.random.categorical(predictions, num_samples=1, dtype=tf.int32)
+        predicted_id = torch.argmax(predictions, dim=-1)
 
         # return the result if the predicted_id is equal to the end token
-        if predicted_id == 2:  # stop token #tokenizer_en.vocab_size + 1:
-            return tf.squeeze(output, axis=0)[1:], attention_weights
+        if predicted_id == 2:
+            break
 
         # concatentate the predicted_id to the output which is given to the decoder
         # as its input.
-        output = tf.concat([output, predicted_id], axis=-1)
+        output = torch.cat([output, predicted_id], dim=-1)
 
-    return tf.squeeze(output, axis=0)[1:], attention_weights
-
-
-def main(args, hparams):
-
-    # Get test dataset
-    test_dataset, tokenizer = get_mimic_dataset(args.csv_root, args.vocab_root, args.mimic_root,
-                                                batch_size=args.batch_size, mode='test')
-
-    # Define model
-    target_vocab_size = tokenizer.get_vocab_size()
-    transformer = Transformer(hparams['n_layer'], hparams['d_model'],
-                              hparams['n_head'], hparams['dff'],
-                              target_vocab_size=target_vocab_size,
-                              rate=hparams['dropout_rate'],
-                              input_shape=(hparams['img_x'], hparams['img_y'], hparams['img_ch']))
-
-    # Restore checkpoint
-    ckpt = tf.train.Checkpoint(transformer=transformer)
-    checkpoint_path = os.path.join('checkpoints', args.model_name)
-    latest_checkpoint = tf.train.latest_checkpoint(checkpoint_path)
-
-    if latest_checkpoint:
-        print(f'{datetime.datetime.now()}: [*] Restoring Checkpoint: {latest_checkpoint}')
-        ckpt.restore(latest_checkpoint)
-    else:
-        print(f'{datetime.datetime.now()}: [*] No checkpoints found. Exiting.')
-        exit(0)
+    return torch.squeeze(output, dim=0)[1:], attention_weights
 
 
-    #################### Run inference ####################
-    pred_txt = dict()
-    true_txt = dict()
+pred_txt = dict()
+true_txt = dict()
 
-    t = tqdm.tqdm(enumerate(test_dataset), total=len(test_dataset))
-    for (idx, (inp, tar)) in t:
-        true_txt[idx] = tokenizer.decode(np.trim_zeros(tar[0].numpy(), 'b')[1:-1])
-        result, attention_weights = evaluate(inp, transformer=transformer, tokenizer=tokenizer)
-        pred_txt[idx] = tokenizer.decode(result)
+t = tqdm.tqdm(enumerate(test_generator), total=len(test_generator))
+for (i, (inp, tar)) in t:
+    true_txt[i] = tokenizer.decode(np.trim_zeros(tar[0].numpy(), 'b')[1:-1])
+    result, _ = evaluate(inp)
+    pred_txt[i] = tokenizer.decode(result.cpu().numpy())
+    print(true_txt[i])
+    print(pred_txt[i])
 
-    pred_txt_df = pd.DataFrame.from_dict(pred_txt, orient='index')
-    true_txt_df = pd.DataFrame.from_dict(true_txt, orient='index')
+a=1
 
-    pred_txt_df.to_csv('/tmp/all_pred.csv', index=False, header=False)
-    true_txt_df.to_csv('/tmp/all_true.csv', index=False, header=False)
+pred_txt_df = pd.DataFrame.from_dict(pred_txt, orient='index')
+true_txt_df = pd.DataFrame.from_dict(true_txt, orient='index')
+
+pred_txt_df.to_csv('all_pred.csv', index=False, header=False)
+true_txt_df.to_csv('all_true.csv', index=False, header=False)
 
 
-if __name__ == '__main__':
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--csv_root', default='preprocessing/mimic')
-    parser.add_argument('--vocab_root', default='preprocessing/mimic')
-    parser.add_argument('--mimic_root', default='/data/datasets/chest_xray/MIMIC-CXR/mimic-cxr-jpg-2.0.0.physionet.org')
-    parser.add_argument('--model_name', default='train05')
-    parser.add_argument('--model_params', default='model/hparams.json')
-    parser.add_argument('--batch_size', default=1)
-    parser.add_argument('--seed', default=42)
-    parser.add_argument('--debug_level', default='3')
-    parser.add_argument('--gpu', help='comma separated list of GPU(s) to use.', default='0')
-    args = parser.parse_args()
-
-    # 0 = all messages are logged (default behavior)
-    # 1 = INFO messages are not printed
-    # 2 = INFO and WARNING messages are not printed
-    # 3 = INFO, WARNING, and ERROR messages are not printed
-    os.environ['TF_CPP_MIN_LOG_LEVEL'] = args.debug_level
-
-    # Set available GPUs
-    os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'  # see issue #152
-    os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
-    args.nGPU = 0 if len(args.gpu) == 0 else len(args.gpu.split(','))
-    print(f'{datetime.datetime.now()}: [*] Using GPU(s): {args.gpu}')
-
-    # Import Tensorflow AFTER setting environment variables
-    # ISSUE: https://github.com/tensorflow/tensorflow/issues/31870
-    import tensorflow as tf
-    from datasets.mimic import get_mimic_dataset
-    from model.transformer import Transformer, default_hparams
-    from model.utils import create_target_masks
-
-    # Set Tensorflow 2.0 logging level
-    error_level = {'0': 'DEBUG', '1': 'INFO', '2': 'WARN', '3': 'ERROR'}
-    tf.get_logger().setLevel(error_level[args.debug_level])
-    print(f'{datetime.datetime.now()}: [*] Setting Tensorflow Global Logging Level: {error_level[args.debug_level]}')
-
-    # Load mode default hyperparameters and update from file if exist
-    hparams = default_hparams()
-    if args.model_params:
-        with open(args.model_params) as json_file:
-            hparams_from_file = json.load(json_file)
-            hparams.update((k, hparams_from_file[k])
-                           for k in set(hparams_from_file).intersection(hparams))
-    print(f'{datetime.datetime.now()}: [*] Model Parameters: {hparams}')
-
-    # Set tensorflow random seed
-    tf.random.set_seed(args.seed)
-
-    # Run main training sequence
-    main(args=args, hparams=hparams)
