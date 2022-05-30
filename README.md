@@ -40,6 +40,26 @@ tqdm                     4.46.0
 ```
 
 
+### Docker Container
+
+Build the docker container:
+
+```
+docker build -t ratchet ./Dockerfile
+```
+
+Run the docker image on CXR images:
+
+```
+docker run --user $(id -u):$(id -g) \
+-v /path/to/image_input_folder:/code/RATCHET/inp_folder \
+-v /path/to/report_output_folder:/code/RATCHET/out_folder:rw \
+-i -t ratchet python run_model.py
+```
+
+Each image in `inp_folder` would have a corresponding `.txt` report saved in `out_folder`.
+
+
 ### Results
 
 <p align="center">
