@@ -157,7 +157,7 @@ if __name__ == '__main__':
         img_array = imageio.imread(image, as_gray=True)[None, ..., None]
 
         # Convert image to float values in (0, 1)
-        img_array = tf.image.convert_image_dtype(img_array, tf.float32)
+        img_array = tf.image.convert_image_dtype(img_array.astype('uint8'), tf.float32)
 
         # Resize image with padding to [1, 224, 224, 1]
         img_array = tf.image.resize_with_pad(img_array, 224, 224, method=tf.image.ResizeMethod.BILINEAR)
