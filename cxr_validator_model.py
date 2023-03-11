@@ -108,7 +108,7 @@ model.compile(
 )
 
 checkpoint = tf.keras.callbacks.ModelCheckpoint(
-    filepath='checkpoints/cxr_validator_model.h5',
+    filepath='checkpoints/cxr_validator_model.tf',
     monitor='val_accuracy', verbose=1, save_best_only=True)
 
 model.fit(train_dataset, epochs=20, callbacks=[checkpoint])

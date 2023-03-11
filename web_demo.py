@@ -7,19 +7,18 @@ import streamlit as st
 import tensorflow as tf
 
 from skimage import io
-from model.transformer import Transformer
-from model.utils import create_target_masks
+from model.transformer import Transformer, default_hparams
 from tokenizers import ByteLevelBPETokenizer
 
 
-@st.cache(allow_output_mutation=True)
+@st.cache_resource
 def load_validator():
-    validator_model = tf.keras.models.load_model('checkpoints/cxr_validator_model.h5')
+    validator_model = tf.keras.models.load_model('checkpoints/cxr_validator_model.tf')
     print('Validator Model Loaded!')
     return validator_model
 
 
-@st.cache(allow_output_mutation=True)
+@st.cache_resource
 def load_model():
 
     # Load Tokenizer
@@ -28,25 +27,17 @@ def load_model():
         'preprocessing/mimic/mimic-merges.txt',
     )
 
-    # Model Hyperparameters
-    target_vocab_size = tokenizer.get_vocab_size()
-    dropout_rate = 0.1
-    num_layers = 6
-    d_model = 512
-    dff = 2048
-    num_heads = 8
-
-    # Define RATCHET Transformer model
-    transformer = Transformer(num_layers, d_model, num_heads, dff,
-                              target_vocab_size=target_vocab_size,
-                              rate=dropout_rate)
-
-    # Restore RATCHET checkpoint
-    checkpoint_path = "checkpoints/train0"
-    ckpt = tf.train.Checkpoint(transformer=transformer)
-    latest_checkpoint = tf.train.latest_checkpoint(checkpoint_path)
-    ckpt.restore(latest_checkpoint)
-    print(f'Model Loaded! Checkpoint file: {latest_checkpoint}')
+    # Load Model
+    hparams = default_hparams()
+    transformer = Transformer(
+        num_layers=hparams['num_layers'],
+        d_model=hparams['d_model'],
+        num_heads=hparams['num_heads'],
+        dff=hparams['dff'],
+        target_vocab_size=tokenizer.get_vocab_size(),
+        dropout_rate=hparams['dropout_rate'])
+    transformer.load_weights('checkpoints/RATCHET.tf')
+    print(f'Model Loaded! Checkpoint file: checkpoints/RATCHET.tf')
 
     return transformer, tokenizer
 
@@ -97,14 +88,9 @@ def evaluate(inp_img, tokenizer, transformer, temperature, top_k, top_p, options
     my_bar = st.progress(0)
     for i in tqdm.tqdm(range(MAX_LENGTH)):
         my_bar.progress(i/MAX_LENGTH)
-        combined_mask = create_target_masks(output)
 
         # predictions.shape == (batch_size, seq_len, vocab_size)
-        predictions, attention_weights = transformer(inp_img,
-                                                     output,
-                                                     False,
-                                                     combined_mask,
-                                                     None)
+        predictions = transformer([inp_img, output], training=False)
 
         # select the last word from the seq_len dimension
         predictions = predictions[:, -1, :] / temperature  # (batch_size, vocab_size)
@@ -121,7 +107,7 @@ def evaluate(inp_img, tokenizer, transformer, temperature, top_k, top_p, options
         # return the result if the predicted_id is equal to the end token
         if predicted_id == 2:  # stop token #tokenizer_en.vocab_size + 1:
             my_bar.empty()
-            return tf.squeeze(output, axis=0)[1:], attention_weights, i
+            break
 
         # concatentate the predicted_id to the output which is given to the decoder
         # as its input.
@@ -129,7 +115,8 @@ def evaluate(inp_img, tokenizer, transformer, temperature, top_k, top_p, options
 
     my_bar.empty()
 
-    return tf.squeeze(output, axis=0)[1:], attention_weights, i
+    # transformer([inp_img, output[:, :-1]], training=False)
+    return tf.squeeze(output, axis=0)[1:], transformer.decoder.last_attn_scores
 
 
 def main():
@@ -143,9 +130,12 @@ def main():
     st.sidebar.title('Configuration')
     options = st.sidebar.selectbox('Generation Method', ('Greedy', 'Sampling'))
     seed = st.sidebar.number_input('Sampling Seed:', value=42)
-    temperature = st.sidebar.slider('Temperature', min_value=0., max_value=1., value=1., step=0.01)
-    top_k = st.sidebar.slider('top_k', min_value=0, max_value=tokenizer.get_vocab_size(), value=0, step=1)
+    temperature = st.sidebar.number_input('Temperature', value=1.)
+    top_k = st.sidebar.slider('top_k', min_value=0, max_value=tokenizer.get_vocab_size(), value=6, step=1)
     top_p = st.sidebar.slider('top_p', min_value=0., max_value=1., value=1., step=0.01)
+    attention_head = st.sidebar.slider('attention_head', min_value=-1, max_value=7, value=-1, step=1)
+
+    st.sidebar.info('PRIVACY POLICY: Uploaded images are never stored on disk.')
 
     st.set_option('deprecation.showfileUploaderEncoding', False)
     uploaded_file = st.file_uploader('Choose an image...', type=('png', 'jpg', 'jpeg'))
@@ -176,9 +166,9 @@ def main():
 
         # Generate radiology report
         with st.spinner('Generating report... Do not refresh or close window.'):
-            result, attention_weights, tokens = evaluate(img_array, tokenizer, transformer,
-                                                         temperature, top_k, top_p,
-                                                         options, seed)
+            result, attention_weights = evaluate(img_array, tokenizer, transformer,
+                                                 temperature, top_k, top_p,
+                                                 options, seed)
             predicted_sentence = tokenizer.decode(result)
 
         # Display generated text
@@ -188,13 +178,16 @@ def main():
 
         st.subheader('Attention Plot:')
 
-        attn_map = attention_weights['decoder_layer6_block2'][0]
-        attn_map = tf.reduce_mean(attn_map, axis=0)
+        attn_map = attention_weights[0]  # squeeze
+        if attention_head == -1:  # average attention heads
+            attn_map = tf.reduce_mean(attn_map, axis=0)
+        else:  # select attention heads
+            attn_map = attn_map[attention_head]
         attn_map = attn_map / attn_map.numpy().max() * 255
 
         fig = plt.figure(figsize=(40, 80))
 
-        for i in range(tokens - 1):
+        for i in range(attn_map.shape[0] - 1):
             attn_token = attn_map[i, ...]
             attn_token = tf.reshape(attn_token, [7, 7])
 

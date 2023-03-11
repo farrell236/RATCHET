@@ -7,13 +7,12 @@ import datetime
 import numpy as np
 import tensorflow as tf
 
-from model.transformer import Transformer
-from model.utils import create_target_masks
+from model.transformer import Transformer, default_hparams
 from tokenizers import ByteLevelBPETokenizer
 
 
 def load_validator():
-    validator_model = tf.keras.models.load_model('checkpoints/cxr_validator_model.h5')
+    validator_model = tf.keras.models.load_model('checkpoints/cxr_validator_model.tf')
     print('Validator Model Loaded!')
     return validator_model
 
@@ -26,25 +25,17 @@ def load_model():
         'preprocessing/mimic/mimic-merges.txt',
     )
 
-    # Model Hyperparameters
-    target_vocab_size = tokenizer.get_vocab_size()
-    dropout_rate = 0.1
-    num_layers = 6
-    d_model = 512
-    dff = 2048
-    num_heads = 8
-
-    # Define RATCHET Transformer model
-    transformer = Transformer(num_layers, d_model, num_heads, dff,
-                              target_vocab_size=target_vocab_size,
-                              rate=dropout_rate)
-
-    # Restore RATCHET checkpoint
-    checkpoint_path = "checkpoints/train0"
-    ckpt = tf.train.Checkpoint(transformer=transformer)
-    latest_checkpoint = tf.train.latest_checkpoint(checkpoint_path)
-    ckpt.restore(latest_checkpoint)
-    print(f'Model Loaded! Checkpoint file: {latest_checkpoint}')
+    # Load Model
+    hparams = default_hparams()
+    transformer = Transformer(
+        num_layers=hparams['num_layers'],
+        d_model=hparams['d_model'],
+        num_heads=hparams['num_heads'],
+        dff=hparams['dff'],
+        target_vocab_size=tokenizer.get_vocab_size(),
+        dropout_rate=hparams['dropout_rate'])
+    transformer.load_weights('checkpoints/RATCHET2.tf')
+    print(f'Model Loaded! Checkpoint file: checkpoints/RATCHET2.tf')
 
     return transformer, tokenizer
 
@@ -93,14 +84,11 @@ def evaluate(inp_img, tokenizer, transformer, temperature, top_k, top_p, options
     # The first token to the transformer should be the start token
     output = tf.convert_to_tensor([[tokenizer.token_to_id('<s>')]])
 
-    for i in range(MAX_LENGTH):
-        combined_mask = create_target_masks(output)
+    for _ in range(MAX_LENGTH):
+
         # predictions.shape == (batch_size, seq_len, vocab_size)
-        predictions, attention_weights = transformer(inp_img,
-                                                     output,
-                                                     False,
-                                                     combined_mask,
-                                                     None)
+        predictions = transformer([inp_img, output], training=False)
+
         # select the last word from the seq_len dimension
         predictions = predictions[:, -1, :] / temperature  # (batch_size, vocab_size)
         predictions = top_k_logits(predictions, k=top_k)
@@ -115,14 +103,14 @@ def evaluate(inp_img, tokenizer, transformer, temperature, top_k, top_p, options
 
         # return the result if the predicted_id is equal to the end token
         if predicted_id == 2:  # stop token #tokenizer_en.vocab_size + 1:
-            return tf.squeeze(output, axis=0)[1:], attention_weights, i
+            break
 
         # concatentate the predicted_id to the output which is given to the decoder
         # as its input.
         output = tf.concat([output, predicted_id], axis=-1)
 
-
-    return tf.squeeze(output, axis=0)[1:], attention_weights, i
+    # transformer([inp_img, output[:, :-1]], training=False)
+    return tf.squeeze(output, axis=0)[1:], transformer.decoder.last_attn_scores
 
 
 
@@ -168,9 +156,9 @@ if __name__ == '__main__':
             continue
 
         # Generate radiology report
-        result, attention_weights, tokens = evaluate(img_array, tokenizer, transformer,
-                                                     args.temperature, args.top_k, args.top_p,
-                                                     args.options, args.seed)
+        result, attention_weights = evaluate(img_array, tokenizer, transformer,
+                                             args.temperature, args.top_k, args.top_p,
+                                             args.options, args.seed)
         predicted_sentence = tokenizer.decode(result)
         print(predicted_sentence)
 

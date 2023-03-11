@@ -12,10 +12,12 @@ RATCHET is a Medical Transformer for Chest X-ray Diagnosis and Reporting. Based 
 
 ### Run the code
 
-Download pretrained weights
-([v1](http://www.doc.ic.ac.uk/~bh1511/ratchet_model_weights_202009251103.zip), 
-[v2](http://www.doc.ic.ac.uk/~bh1511/ratchet_model_weights_202110181424.zip))
-and put in `./checkpoints` folder. Then run:
+Download pretrained weights and put in `./checkpoints` folder.
+
+- [ratchet_model_weights_202303111506.zip](http://www.doc.ic.ac.uk/~bh1511/ratchet_model_weights_202303111506.zip)
+<br> Size: `1.5G` <br> MD5: `26ab19cf18908841320205e192dabe9f` <br>
+
+Start streamlit to run the webapp:
 
 ```
 streamlit run web_demo.py
@@ -23,20 +25,20 @@ streamlit run web_demo.py
 
 ##### Environment: 
 ```
-Python 3.7.4
+Python 3.9.10
 ```
 
 ##### Packages:
 ```
-imageio                  2.8.0
-matplotlib               3.2.1
-numpy                    1.18.4
-pandas                   1.0.3
-scikit-image             0.17.2
-streamlit                0.67.1
-tensorflow-gpu           2.3.0
-tokenizers               0.7.0
-tqdm                     4.46.0
+imageio                  2.26.0
+matplotlib               3.7.1
+numpy                    1.23.5
+pandas                   1.5.3
+scikit-image             0.20.0
+streamlit                1.20.0
+tensorflow               2.11.0
+tokenizers               0.13.2
+tqdm                     4.64.1
 ```
 
 

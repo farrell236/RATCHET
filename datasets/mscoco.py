@@ -12,7 +12,7 @@ import tensorflow as tf
 from tokenizers import ByteLevelBPETokenizer
 
 
-def parse_function(filename, text):
+def parse_function(filename, texts_inputs, texts_labels):
     # Read entire contents of image
     image_string = tf.io.read_file(filename)
 
@@ -25,11 +25,12 @@ def parse_function(filename, text):
     # Resize image with padding to 244x244
     image = tf.image.resize_with_pad(image, 224, 224, method=tf.image.ResizeMethod.BILINEAR)
 
-    return image, text
+    return (image, texts_inputs), texts_labels
 
 
-def augmentation_fn(image, text):
+def augmentation_fn(inputs, texts_labels):
     # Random left-right flip the image
+    image, texts_inputs = inputs
     image = tf.image.random_flip_left_right(image)
 
     # Random brightness, saturation and contrast shifting
@@ -41,7 +42,7 @@ def augmentation_fn(image, text):
     # Make sure the image is still in [0, 1]
     image = tf.clip_by_value(image, 0.0, 1.0)
 
-    return image, text
+    return (image, texts_inputs), texts_labels
 
 
 def _gaussian_kernel(kernel_size, sigma, n_channels, dtype):
@@ -99,8 +100,12 @@ def get_mscoco_dataset(coco_root,
     texts_tokenized = tf.keras.preprocessing.sequence.pad_sequences(
         texts_tokenized, maxlen=max_length, dtype='int32', padding='post', truncating='post')
 
+    texts_tokenized = texts_tokenized[:, :(max_length + 1)]
+    texts_inputs = texts_tokenized[:, :-1]  # Drop the [END] tokens
+    texts_labels = texts_tokenized[:, 1:]  # Drop the [START] tokens
+
     # Create Tensorflow dataset (image, text) pair
-    dataset = tf.data.Dataset.from_tensor_slices((all_img_name_vector, texts_tokenized))
+    dataset = tf.data.Dataset.from_tensor_slices((all_img_name_vector, texts_inputs, texts_labels))
     if mode == 'train':
         dataset = dataset.shuffle(len(dataset) if buffer_size == None else buffer_size)
     dataset = dataset.map(parse_function, num_parallel_calls=n_threads)
@@ -108,7 +113,7 @@ def get_mscoco_dataset(coco_root,
         dataset = dataset.map(augmentation_fn, num_parallel_calls=n_threads)
     # dataset = dataset.map(lambda x, y: (apply_blur(x), y), num_parallel_calls=n_threads)
     dataset = dataset.batch(batch_size)
-    dataset = dataset.prefetch(n_threads)
+    # dataset = dataset.prefetch(n_threads)
 
     return dataset, tokenizer
 
