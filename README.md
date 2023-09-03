@@ -17,6 +17,9 @@ Download pretrained weights and put in `./checkpoints` folder.
 - [ratchet_model_weights_202303111506.zip](http://www.doc.ic.ac.uk/~bh1511/ratchet_model_weights_202303111506.zip)
 <br> Size: `1.5G` <br> MD5: `26ab19cf18908841320205e192dabe9f` <br>
 
+- [ratchet_model_weights_202309022247.zip](http://www.doc.ic.ac.uk/~bh1511/ratchet_model_weights_202309022247.zip)
+<br> Size: `695M` <br> MD5: `e028c1551419c059f62b1598e8ef92f3` <br>
+
 Start streamlit to run the webapp:
 
 ```
